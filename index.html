@@ -192,6 +192,7 @@ let state = {
   filter: "Tous",
   panel: null, // {type:'detail'|'edit'|'addMatch'|'settings'|'posts', playerId}
   apiTest: null,
+  highlightlyTest: null,
   importStatus: {},
   importStatusAF: {},
   importStatusSM: {},
@@ -544,6 +545,16 @@ function checkNewsOnLoad() {
   }
 }
 
+async function highlightlyPing() {
+  const qs = new URLSearchParams({ path: "leagues" }).toString();
+  const res = await fetch(`/.netlify/functions/highlightly?${qs}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Erreur du relais Highlightly (statut ${res.status}).`);
+  }
+  return data;
+}
+
 async function testApiConnection() {
   state.apiTest = { loading: true };
   render();
@@ -552,6 +563,19 @@ async function testApiConnection() {
     state.apiTest = { loading: false, count };
   } catch (e) {
     state.apiTest = { loading: false, error: true };
+  }
+  render();
+}
+
+async function testHighlightlyConnection() {
+  state.highlightlyTest = { loading: true };
+  render();
+  try {
+    const data = await highlightlyPing();
+    const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : Object.keys(data).length);
+    state.highlightlyTest = { loading: false, count, raw: JSON.stringify(data).slice(0, 300) };
+  } catch (e) {
+    state.highlightlyTest = { loading: false, error: e.message || "Erreur inconnue" };
   }
   render();
 }
@@ -755,6 +779,7 @@ function render() {
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input id="search-input" placeholder="Rechercher un joueur ou un club" style="width:240px" value="${escapeHtml(state.query)}" />
         <button class="btn btn-outline" id="test-api-btn">${state.apiTest && state.apiTest.loading ? "Test en cours…" : "Tester TheSportsDB"}</button>
+        <button class="btn btn-outline" id="test-highlightly-btn">${state.highlightlyTest && state.highlightlyTest.loading ? "Test en cours…" : "Tester Highlightly"}</button>
         <button class="btn btn-outline" id="gen-posts-btn">Générer le post du jour</button>
         <button class="btn btn-outline" id="settings-btn" title="Réglages">⚙</button>
         <button class="btn btn-outline" id="bulk-import-btn">Importer en masse</button>
@@ -765,6 +790,11 @@ function render() {
     ${state.apiTest && !state.apiTest.loading ? `
       <div class="banner ${state.apiTest.error ? 'banner-red' : 'banner-green'}">
         ${state.apiTest.error ? "Connexion à TheSportsDB impossible pour le moment — réessaie plus tard." : `Connexion à TheSportsDB réussie — ${state.apiTest.count} équipes reçues en réponse de test.`}
+      </div>` : ""}
+
+    ${state.highlightlyTest && !state.highlightlyTest.loading ? `
+      <div class="banner ${state.highlightlyTest.error ? 'banner-red' : 'banner-green'}">
+        ${state.highlightlyTest.error ? `Connexion à Highlightly impossible : ${escapeHtml(state.highlightlyTest.error)}` : `Connexion à Highlightly réussie — ${state.highlightlyTest.count} élément(s) reçu(s). Aperçu : ${escapeHtml(state.highlightlyTest.raw)}`}
       </div>` : ""}
 
     <div class="banner banner-gold">
@@ -814,6 +844,7 @@ function render() {
 
   document.getElementById("search-input").addEventListener("input", e => { state.query = e.target.value; render(); });
   document.getElementById("test-api-btn").addEventListener("click", testApiConnection);
+  document.getElementById("test-highlightly-btn").addEventListener("click", testHighlightlyConnection);
   document.getElementById("gen-posts-btn").addEventListener("click", generatePosts);
   document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
   document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
