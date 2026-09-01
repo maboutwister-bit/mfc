@@ -1062,6 +1062,7 @@ function renderBulkImportPanel() {
 
 function formatStatEntry(entry) {
   const rows = [
+    ["Club", entry.club],
     ["Matchs joués", entry.gamesPlayed],
     ["Buts", entry.goals],
     ["Passes décisives", entry.assists],
@@ -1229,7 +1230,7 @@ function renderDetailPanel(playerId) {
       ${stats && !stats.loading && stats.error === "network" ? `<div class="form-error">Relais Highlightly indisponible${stats.detail ? " : " + escapeHtml(stats.detail) : ""}.</div>` : ""}
       ${stats && !stats.loading && stats.raw ? `
         <div style="margin-top:8px">
-          ${(Array.isArray(stats.raw) ? stats.raw : [stats.raw]).map(formatStatEntry).join("")}
+          ${(stats.raw.perCompetition || (Array.isArray(stats.raw) ? stats.raw : [stats.raw])).map(formatStatEntry).join("")}
         </div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Trouvé sous le nom : ${escapeHtml(stats.playerName)} (source : Highlightly)</div>
       ` : ""}
