@@ -1072,6 +1072,16 @@ function formatStatEntry(entry) {
     ["Sorties", entry.substitutedOut],
   ].filter(([, v]) => v !== undefined && v !== null);
 
+  if (rows.length === 0) {
+    return `
+      <div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--paper)">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">
+          ${escapeHtml(entry.league || "Entrée sans champs reconnus — aperçu brut")}
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-family:monospace;white-space:pre-wrap;max-height:160px;overflow:auto">${escapeHtml(JSON.stringify(entry, null, 2)).slice(0, 1200)}</div>
+      </div>`;
+  }
+
   return `
     <div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--paper)">
       <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">
