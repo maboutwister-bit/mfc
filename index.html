@@ -212,6 +212,7 @@ function loadData() {
     const parsed = JSON.parse(raw);
     state.players = parsed.players || [];
     state.matches = parsed.matches || [];
+    state.playerStats = parsed.playerStats || {};
   } catch (e) {
     const lines = BULK_IMPORT_TEMPLATE.split("\n").map(l => l.trim()).filter(Boolean);
     state.players = lines.map(parseBulkImportLine).filter(Boolean).map((p, i) => ({
@@ -219,6 +220,7 @@ function loadData() {
       id: "MFC-" + String(1000 + i + 1).slice(1)
     }));
     state.matches = [];
+    state.playerStats = {};
   }
   try {
     state.apiKey = localStorage.getItem(API_KEY_STORAGE) || "";
@@ -236,7 +238,7 @@ function saveApiKey(key) {
 }
 function saveData() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ players: state.players, matches: state.matches }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ players: state.players, matches: state.matches, playerStats: state.playerStats }));
   } catch (e) {
     console.error("Sauvegarde locale impossible", e);
   }
@@ -781,6 +783,10 @@ async function computeTop5() {
   render();
 
   const results = [];
+  let notFoundCount = 0;
+  let networkErrorCount = 0;
+  let lastNetworkError = null;
+
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
     state.top5.progress = i + 1;
@@ -798,9 +804,12 @@ async function computeTop5() {
           raw = stats;
         } else {
           state.playerStats[p.id] = { loading: false, error: "not_found" };
+          notFoundCount++;
         }
       } catch (e) {
         state.playerStats[p.id] = { loading: false, error: "network", detail: e.message };
+        networkErrorCount++;
+        lastNetworkError = e.message;
       }
       await new Promise(r => setTimeout(r, 250));
     }
@@ -813,12 +822,16 @@ async function computeTop5() {
     }
   }
 
+  saveData();
   results.sort((a, b) => b.score - a.score);
   state.top5 = {
     loading: false,
     results: results.slice(0, 5),
     scannedCount: players.length,
-    foundCount: results.length
+    foundCount: results.length,
+    notFoundCount,
+    networkErrorCount,
+    lastNetworkError
   };
   render();
 }
@@ -888,6 +901,7 @@ async function fetchPlayerStatsFromHighlightly(playerId) {
     const foundId = found.id || found.playerId;
     const stats = await highlightlyPlayerStatistics(foundId);
     state.playerStats[playerId] = { loading: false, playerName: found.name || searchName, raw: stats, fetchedAt: Date.now() };
+    saveData();
   } catch (e) {
     state.playerStats[playerId] = { loading: false, error: "network", detail: e.message };
   }
@@ -1271,6 +1285,8 @@ function renderTop5Panel() {
     body = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
         ${t.scannedCount} joueurs analysés, statistiques trouvées pour ${t.foundCount}.
+        ${t.notFoundCount ? `<br/>${t.notFoundCount} non trouvé(s) sur Highlightly.` : ""}
+        ${t.networkErrorCount ? `<br/>${t.networkErrorCount} erreur(s) réseau/API${t.lastNetworkError ? ` (dernière : ${escapeHtml(t.lastNetworkError)})` : ""}.` : ""}
       </div>
       ${t.results.length === 0 ? `<div class="empty-row">Aucun joueur avec des statistiques exploitables trouvé.</div>` : t.results.map((r, i) => `
         <div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--paper)">
