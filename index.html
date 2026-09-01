@@ -150,6 +150,8 @@ const API_KEY_STORAGE = "mfc-radar-anthropic-key";
 const CLAUDE_MODEL = "claude-sonnet-5";
 const NEWS_CACHE_KEY = "mfc-radar-news-cache";
 const NEWS_MAX_AGE_MS = 6 * 3600 * 1000;
+const COMPETITOR_CACHE_KEY = "mfc-radar-competitor-cache";
+const COMPETITOR_MAX_AGE_MS = 12 * 3600 * 1000;
 const STATS_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const TELEGRAM_TOKEN_STORAGE = "mfc-radar-telegram-token";
 const TELEGRAM_CHATID_STORAGE = "mfc-radar-telegram-chatid";
@@ -218,7 +220,8 @@ let state = {
   hlQuotaUsed: 0,
   postsGen: null, // {loading, text, error}
   weekPosts: null, // {loading, text, error}
-  newsState: null // {loading, text, error, fetchedAt, needsKey}
+  newsState: null, // {loading, text, error, fetchedAt, needsKey}
+  competitorState: null // {loading, text, error, fetchedAt, needsKey}
 };
 
 function loadData() {
@@ -678,6 +681,87 @@ function loadNewsCache() {
     return JSON.parse(raw);
   } catch (e) {
     return null;
+  }
+}
+
+function loadCompetitorCache() {
+  try {
+    const raw = localStorage.getItem(COMPETITOR_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchCompetitorWatch(force) {
+  if (state.competitorState && state.competitorState.loading) return;
+  if (!force) {
+    const cached = loadCompetitorCache();
+    if (cached && Date.now() - cached.fetchedAt < COMPETITOR_MAX_AGE_MS) {
+      state.competitorState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+      render();
+      return;
+    }
+  }
+  if (!state.apiKey) {
+    state.competitorState = { needsKey: true };
+    render();
+    return;
+  }
+  state.competitorState = { loading: true };
+  render();
+
+  const prompt = `Tu surveilles l'activité récente du compte "Aigles du Mali" sur X, Facebook et TikTok, un concurrent qui couvre aussi l'actualité du football malien.
+
+Cherche leurs publications les plus récentes (derniers jours) sur ces trois plateformes.
+
+Pour chaque publication trouvée, résume UNIQUEMENT :
+- Le sujet/thème traité (ex. "un transfert", "un résumé de match", "un portrait de joueur")
+- La plateforme et la date approximative si disponible
+- Ce qui semble avoir bien fonctionné (engagement visible) si l'information est disponible
+
+Règles strictes :
+- Ne reproduis JAMAIS leurs textes mot pour mot, même partiellement — reformule entièrement avec tes propres mots
+- Ne cite aucune légende ni accroche textuellement
+- Si tu ne trouves rien de récent, dis-le clairement au lieu d'inventer
+- Réponds en français, sous forme de liste à puces courte (5 éléments maximum), sans préambule ni conclusion`;
+
+  try {
+    const text = await callClaude(prompt, [{ type: "web_search_20250305", name: "web_search" }], 60000);
+    const fetchedAt = Date.now();
+    state.competitorState = { loading: false, text, fetchedAt };
+    try {
+      localStorage.setItem(COMPETITOR_CACHE_KEY, JSON.stringify({ text, fetchedAt }));
+    } catch (e) { /* stockage plein ou indisponible, on continue sans cache */ }
+  } catch (e) {
+    state.competitorState = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
+function renderCompetitorBody() {
+  const c = state.competitorState;
+  if (!c) return `<div class="empty-row">Chargement…</div>`;
+  if (c.needsKey) return `<div style="font-size:12.5px;color:var(--muted)">Configure ta clé API (⚙) pour activer la veille concurrentielle.</div>`;
+  if (c.loading) return `<div class="empty-row">Recherche des publications récentes… (jusqu'à 60 secondes)</div>`;
+  if (c.error) return `<div class="form-error">${escapeHtml(c.error)}</div>`;
+  if (c.text) {
+    const ts = c.fetchedAt ? new Date(c.fetchedAt).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "";
+    return `<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escapeHtml(c.text)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Dernière vérification : ${ts}</div>`;
+  }
+  return `<div class="empty-row">Aucune donnée pour le moment.</div>`;
+}
+
+function checkCompetitorOnLoad() {
+  const cached = loadCompetitorCache();
+  if (cached) {
+    state.competitorState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+  }
+  if (!cached || Date.now() - cached.fetchedAt >= COMPETITOR_MAX_AGE_MS) {
+    if (state.apiKey) fetchCompetitorWatch(false);
+    else if (!cached) state.competitorState = { needsKey: true };
   }
 }
 
@@ -1174,6 +1258,14 @@ function render() {
       ${renderNewsBody()}
     </div>
 
+    <div id="competitor-block" style="background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif">Veille concurrentielle — Aigles du Mali</div>
+        <button class="btn btn-outline" id="refresh-competitor-btn" style="padding:4px 10px;font-size:11.5px">Actualiser</button>
+      </div>
+      ${renderCompetitorBody()}
+    </div>
+
     <div class="summary-bar">
       <div style="display:flex;gap:24px">
         <div><div class="stat-value">${tm.length}</div><div class="stat-label">Aujourd'hui</div></div>
@@ -1215,6 +1307,7 @@ function render() {
   document.getElementById("week-posts-btn").addEventListener("click", generateWeekPosts);
   document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
   document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
+  document.getElementById("refresh-competitor-btn").addEventListener("click", () => fetchCompetitorWatch(true));
   document.getElementById("bulk-import-btn").addEventListener("click", () => { state.panel = { type: "bulkImport" }; renderPanel(); });
   document.getElementById("add-player-btn").addEventListener("click", () => openEditPlayer(null));
   app.querySelectorAll("[data-filter]").forEach(el => el.addEventListener("click", () => { state.filter = el.dataset.filter; render(); }));
@@ -1896,6 +1989,7 @@ function renderAddMatchPanel(playerId) {
 loadData();
 render();
 checkNewsOnLoad();
+checkCompetitorOnLoad();
 </script>
 </body>
 </html>
