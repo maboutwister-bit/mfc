@@ -106,6 +106,7 @@
     display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;
   }
   .avatar-lg { width: 48px; height: 48px; font-size: 16px; }
+  .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
   .player-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .player-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .player-club { font-size: 12px; color: var(--muted); }
@@ -150,6 +151,10 @@ const CLAUDE_MODEL = "claude-sonnet-5";
 const NEWS_CACHE_KEY = "mfc-radar-news-cache";
 const NEWS_MAX_AGE_MS = 6 * 3600 * 1000;
 const STATS_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const TELEGRAM_TOKEN_STORAGE = "mfc-radar-telegram-token";
+const TELEGRAM_CHATID_STORAGE = "mfc-radar-telegram-chatid";
+const HL_QUOTA_STORAGE = "mfc-radar-hl-quota";
+const HL_DAILY_LIMIT = 100;
 
 const CATEGORY_STYLE = {
   A: "A", U23: "U23", NEXT: "NEXT", Diaspora: "Diaspora"
@@ -170,6 +175,13 @@ function ageFromISO(iso) {
 }
 function initials(prenom, nom) {
   return `${(prenom||"?")[0]||""}${(nom||"?")[0]||""}`.toUpperCase();
+}
+function avatarHtml(p, size) {
+  const cls = size === "lg" ? "avatar avatar-lg" : "avatar";
+  if (p.photo) {
+    return `<div class="${cls}"><img class="avatar-img" src="${p.photo}" alt="" /></div>`;
+  }
+  return `<div class="${cls}">${initials(p.prenom, p.nom)}</div>`;
 }
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -201,7 +213,11 @@ let state = {
   top5: null, // {loading, progress, total, results, scannedCount, foundCount}
   top5Posts: null, // {loading, text, error}
   apiKey: "",
+  telegramToken: "",
+  telegramChatId: "",
+  hlQuotaUsed: 0,
   postsGen: null, // {loading, text, error}
+  weekPosts: null, // {loading, text, error}
   newsState: null // {loading, text, error, fetchedAt, needsKey}
 };
 
@@ -227,6 +243,57 @@ function loadData() {
   } catch (e) {
     state.apiKey = "";
   }
+  try {
+    state.telegramToken = localStorage.getItem(TELEGRAM_TOKEN_STORAGE) || "";
+    state.telegramChatId = localStorage.getItem(TELEGRAM_CHATID_STORAGE) || "";
+  } catch (e) {
+    state.telegramToken = ""; state.telegramChatId = "";
+  }
+  try {
+    const raw = localStorage.getItem(HL_QUOTA_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const today = todayISO();
+    state.hlQuotaUsed = (parsed && parsed.date === today) ? parsed.count : 0;
+  } catch (e) {
+    state.hlQuotaUsed = 0;
+  }
+}
+function saveTelegramCreds(token, chatId) {
+  state.telegramToken = token;
+  state.telegramChatId = chatId;
+  try {
+    localStorage.setItem(TELEGRAM_TOKEN_STORAGE, token);
+    localStorage.setItem(TELEGRAM_CHATID_STORAGE, chatId);
+  } catch (e) { console.error("Sauvegarde Telegram impossible", e); }
+}
+function incrementHlQuota(by) {
+  const today = todayISO();
+  let count = state.hlQuotaUsed || 0;
+  try {
+    const raw = localStorage.getItem(HL_QUOTA_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : null;
+    count = (parsed && parsed.date === today) ? parsed.count : 0;
+  } catch (e) {}
+  count += (by || 1);
+  state.hlQuotaUsed = count;
+  try {
+    localStorage.setItem(HL_QUOTA_STORAGE, JSON.stringify({ date: today, count }));
+  } catch (e) {}
+}
+async function sendTelegramMessage(text) {
+  if (!state.telegramToken || !state.telegramChatId) {
+    throw new Error("Configure ton token et ton chat ID Telegram dans les réglages.");
+  }
+  const res = await fetch(`https://api.telegram.org/bot${state.telegramToken}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: state.telegramChatId, text })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.description || `Erreur Telegram (statut ${res.status}).`);
+  }
+  return true;
 }
 function saveApiKey(key) {
   state.apiKey = key;
@@ -422,7 +489,9 @@ function buildDashboardSummary() {
 
   lines.push("Joueurs suivis :");
   active.forEach(p => {
-    lines.push(`- ${p.prenom} ${p.nom} (${p.club}, ${p.paysClub}) · catégories: ${p.categories.join(", ")} · priorité ${p.priorite} · statut Mali: ${p.statutMali}`);
+    const convoc = (p.convocations || []).slice().sort((a,b)=>b.date.localeCompare(a.date))[0];
+    const convocTxt = convoc ? ` · dernière convocation: ${convoc.categorie} ${convoc.date} (${convoc.statut}, ${convoc.competition})` : "";
+    lines.push(`- ${p.prenom} ${p.nom} (${p.club}, ${p.paysClub}) · catégories: ${p.categories.join(", ")} · priorité ${p.priorite} · statut Mali: ${p.statutMali}${convocTxt}`);
   });
   lines.push("");
   lines.push("Matchs aujourd'hui :");
@@ -465,6 +534,92 @@ function buildDashboardSummary() {
   }
 
   return lines.join("\n");
+}
+
+async function generateWeekPosts() {
+  if (!state.apiKey) {
+    state.panel = { type: "settings" };
+    render();
+    return;
+  }
+  state.weekPosts = { loading: true };
+  state.panel = { type: "weekPosts" };
+  render();
+
+  const summary = buildDashboardSummary();
+  const formatsList = Object.keys(EDITORIAL_FORMATS).map(k => EDITORIAL_FORMATS[k]);
+  const portrait = getCurrentPortrait();
+  const formatsDesc = formatsList.map(f => `- ${f.name} (${f.time}) : ${f.objective}`).join("\n");
+
+  const prompt = `Tu es le rédacteur du compte "Mali Football Connect" (MFC), sur TikTok et X.
+
+Voici le calendrier éditorial complet de la semaine, un format par jour :
+${formatsDesc}
+
+Pour le format "Portrait MFC", le joueur prévu cette semaine est : ${portrait.player} (angle : "${portrait.angle}"). Si les données ne suffisent pas pour lui, indique-le clairement plutôt que d'inventer.
+
+Règles éditoriales strictes :
+- Radar avant les noms : base-toi uniquement sur les données ci-dessous, jamais sur des suppositions
+- Données vérifiées : si une information manque pour un format donné, indique-le clairement au lieu de l'inventer
+- Un post par format, dans l'ordre du calendrier ci-dessus
+
+Voici l'état actuel du tableau de bord :
+
+${summary}
+
+Rédige les 7 posts (un par format du calendrier), chacun avec :
+1. Le nom du format en titre
+2. Une accroche courte
+3. Un corps de texte de 2-4 phrases
+4. Des hashtags incluant toujours #MFC #MaliFootball
+
+Sépare chaque post par "---". Réponds directement avec les 7 posts, sans préambule ni conclusion.`;
+
+  try {
+    const text = await callClaude(prompt, null, 60000);
+    state.weekPosts = { loading: false, text };
+  } catch (e) {
+    state.weekPosts = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
+function renderWeekPostsPanel() {
+  const w = state.weekPosts;
+  let body = "";
+  if (w && w.loading) {
+    body = `<div class="empty-row">Claude rédige les 7 posts de la semaine… (jusqu'à 60 secondes)</div>`;
+  } else if (w && w.error) {
+    body = `<div class="form-error">${escapeHtml(w.error)}</div>`;
+  } else if (w && w.text) {
+    body = `<textarea readonly style="width:100%;min-height:420px;font-size:12.5px;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink)">${escapeHtml(w.text)}</textarea>`;
+  } else {
+    body = `<div class="empty-row">Aucun post généré pour le moment.</div>`;
+  }
+  openOverlayPanel(`
+    <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:12px">Posts de la semaine (7 formats)</div>
+    ${body}
+    <div class="form-actions" style="margin-top:14px">
+      <button class="btn btn-outline" id="regen-week-btn">Régénérer</button>
+      <button class="btn btn-outline" id="close-week-btn">Fermer</button>
+    </div>
+    ${w && w.text ? `
+      <button class="btn btn-outline" id="tg-send-week-btn" style="width:100%;margin-top:8px">Envoyer par Telegram</button>
+      ${w.tgStatus ? `<div style="font-size:12px;margin-top:6px;color:${w.tgStatus.startsWith('Erreur') ? 'var(--red)' : 'var(--green)'}">${escapeHtml(w.tgStatus)}</div>` : ""}
+    ` : ""}
+  `);
+  document.getElementById("close-week-btn").addEventListener("click", closePanel);
+  document.getElementById("regen-week-btn").addEventListener("click", generateWeekPosts);
+  const tgBtn2 = document.getElementById("tg-send-week-btn");
+  if (tgBtn2) tgBtn2.addEventListener("click", async () => {
+    try {
+      await sendTelegramMessage(w.text);
+      state.weekPosts.tgStatus = "Envoyé sur Telegram avec succès.";
+    } catch (e) {
+      state.weekPosts.tgStatus = "Erreur : " + e.message;
+    }
+    renderWeekPostsPanel();
+  });
 }
 
 async function generatePosts() {
@@ -578,6 +733,7 @@ function checkNewsOnLoad() {
 }
 
 async function highlightlyPing() {
+  incrementHlQuota(1);
   const qs = new URLSearchParams({ path: "leagues" }).toString();
   const res = await fetch(`/.netlify/functions/highlightly?${qs}`);
   const data = await res.json().catch(() => ({}));
@@ -588,6 +744,7 @@ async function highlightlyPing() {
 }
 
 async function highlightlyCall(path, params) {
+  incrementHlQuota(1);
   const qs = new URLSearchParams({ path, ...(params || {}) }).toString();
   const res = await fetch(`/.netlify/functions/highlightly?${qs}`);
   const data = await res.json().catch(() => ({}));
@@ -956,7 +1113,7 @@ function playerCardHtml(p) {
   const nm = nextMatchFor(p.id);
   return `<div class="player-card" data-open-detail="${p.id}">
     <div class="player-card-head">
-      <div class="avatar">${initials(p.prenom, p.nom)}</div>
+      ${avatarHtml(p)}
       <div style="min-width:0">
         <div class="player-name">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div>
         <div class="player-club">${escapeHtml(p.club)}</div>
@@ -985,8 +1142,10 @@ function render() {
         <input id="search-input" placeholder="Rechercher un joueur ou un club" style="width:240px" value="${escapeHtml(state.query)}" />
         <button class="btn btn-outline" id="test-api-btn">${state.apiTest && state.apiTest.loading ? "Test en cours…" : "Tester TheSportsDB"}</button>
         <button class="btn btn-outline" id="test-highlightly-btn">${state.highlightlyTest && state.highlightlyTest.loading ? "Test en cours…" : "Tester Highlightly"}</button>
+        <span style="font-size:11.5px;color:${state.hlQuotaUsed >= HL_DAILY_LIMIT ? 'var(--red)' : 'var(--muted)'}">Highlightly : ${state.hlQuotaUsed}/${HL_DAILY_LIMIT} req. aujourd'hui</span>
         <button class="btn btn-outline" id="gen-posts-btn">Générer le post du jour</button>
         <button class="btn btn-outline" id="top5-btn">Top 5 de la semaine</button>
+        <button class="btn btn-outline" id="week-posts-btn">Générer la semaine</button>
         <button class="btn btn-outline" id="settings-btn" title="Réglages">⚙</button>
         <button class="btn btn-outline" id="bulk-import-btn">Importer en masse</button>
         <button class="btn btn-primary" id="add-player-btn">+ Ajouter un joueur</button>
@@ -1053,6 +1212,7 @@ function render() {
   document.getElementById("test-highlightly-btn").addEventListener("click", testHighlightlyConnection);
   document.getElementById("gen-posts-btn").addEventListener("click", generatePosts);
   document.getElementById("top5-btn").addEventListener("click", () => { state.panel = { type: "top5" }; renderPanel(); });
+  document.getElementById("week-posts-btn").addEventListener("click", generateWeekPosts);
   document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
   document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
   document.getElementById("bulk-import-btn").addEventListener("click", () => { state.panel = { type: "bulkImport" }; renderPanel(); });
@@ -1301,7 +1461,9 @@ function renderTop5Panel() {
         ${t.results.length > 0 ? `<button class="btn btn-primary" id="gen-top5-posts-btn" ${tp && tp.loading ? "disabled" : ""}>${tp && tp.loading ? "Rédaction en cours…" : "Générer les 5 posts"}</button>` : ""}
       </div>
       ${tp && !tp.loading && tp.error ? `<div class="form-error" style="margin-top:10px">${escapeHtml(tp.error)}</div>` : ""}
-      ${tp && !tp.loading && tp.text ? `<textarea readonly style="width:100%;min-height:320px;font-size:12.5px;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);margin-top:10px">${escapeHtml(tp.text)}</textarea>` : ""}
+      ${tp && !tp.loading && tp.text ? `<textarea readonly style="width:100%;min-height:320px;font-size:12.5px;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);margin-top:10px">${escapeHtml(tp.text)}</textarea>
+      <button class="btn btn-outline" id="tg-send-top5-btn" style="width:100%;margin-top:8px">Envoyer par Telegram</button>
+      ${tp.tgStatus ? `<div style="font-size:12px;margin-top:6px;color:${tp.tgStatus.startsWith('Erreur') ? 'var(--red)' : 'var(--green)'}">${escapeHtml(tp.tgStatus)}</div>` : ""}` : ""}
     `;
   }
 
@@ -1316,6 +1478,60 @@ function renderTop5Panel() {
   if (rerunBtn) rerunBtn.addEventListener("click", computeTop5);
   const genBtn = document.getElementById("gen-top5-posts-btn");
   if (genBtn) genBtn.addEventListener("click", generateTop5Posts);
+  const tgBtn3 = document.getElementById("tg-send-top5-btn");
+  if (tgBtn3) tgBtn3.addEventListener("click", async () => {
+    try {
+      await sendTelegramMessage(tp.text);
+      state.top5Posts.tgStatus = "Envoyé sur Telegram avec succès.";
+    } catch (e) {
+      state.top5Posts.tgStatus = "Erreur : " + e.message;
+    }
+    renderTop5Panel();
+  });
+}
+
+function renderAddConvocationPanel(playerId) {
+  const form = { categorie: "A", competition: "", date: todayISO(), statut: "Convoqué" };
+
+  function draw(errorMsg) {
+    openOverlayPanel(`
+      <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:16px">Ajouter une convocation</div>
+      <div class="field"><label>Catégorie</label>
+        <select id="c-categorie">
+          ${["A","U23","U20","U17"].map(c => `<option ${form.categorie===c?"selected":""}>${c}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Compétition / rassemblement</label><input id="c-competition" value="${escapeHtml(form.competition)}" placeholder="ex. Éliminatoires CAN 2027" /></div>
+      <div class="field"><label>Date</label><input type="date" id="c-date" value="${form.date}" /></div>
+      <div class="field"><label>Statut</label>
+        <select id="c-statut">
+          ${["Convoqué","Sur le banc","Non retenu","Blessé"].map(s => `<option ${form.statut===s?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>
+      ${errorMsg ? `<div class="form-error">${errorMsg}</div>` : ""}
+      <div class="form-actions">
+        <button class="btn btn-primary" id="save-convocation-btn">Enregistrer</button>
+        <button class="btn btn-outline" id="cancel-convocation-btn">Annuler</button>
+      </div>
+    `);
+    document.getElementById("cancel-convocation-btn").addEventListener("click", closePanel);
+    document.getElementById("save-convocation-btn").addEventListener("click", () => {
+      form.categorie = document.getElementById("c-categorie").value;
+      form.competition = document.getElementById("c-competition").value;
+      form.date = document.getElementById("c-date").value;
+      form.statut = document.getElementById("c-statut").value;
+      if (!form.competition.trim()) {
+        draw("Précise la compétition ou le rassemblement."); return;
+      }
+      const player = playerById(playerId);
+      if (!player.convocations) player.convocations = [];
+      player.convocations.push({ ...form });
+      saveData();
+      closePanel();
+      openDetail(playerId);
+    });
+  }
+  draw();
 }
 
 function renderPanel() {
@@ -1327,6 +1543,8 @@ function renderPanel() {
   else if (state.panel.type === "posts") renderPostsPanel();
   else if (state.panel.type === "bulkImport") renderBulkImportPanel();
   else if (state.panel.type === "top5") renderTop5Panel();
+  else if (state.panel.type === "addConvocation") renderAddConvocationPanel(state.panel.playerId);
+  else if (state.panel.type === "weekPosts") renderWeekPostsPanel();
 }
 
 function renderSettingsPanel() {
@@ -1340,6 +1558,18 @@ function renderSettingsPanel() {
       Ta clé reste uniquement dans ce navigateur (stockage local) et n'est envoyée qu'à Anthropic pour générer les posts.
       Ne partage jamais ce fichier une fois ta clé enregistrée.
     </div>
+    <div class="field">
+      <label>Token bot Telegram</label>
+      <input type="password" id="s-tgtoken" placeholder="123456:ABC-..." value="${escapeHtml(state.telegramToken)}" />
+    </div>
+    <div class="field">
+      <label>Chat ID Telegram</label>
+      <input id="s-tgchat" placeholder="ex. 123456789 ou @moncanal" value="${escapeHtml(state.telegramChatId)}" />
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Crée un bot via @BotFather sur Telegram pour obtenir un token, puis récupère ton chat ID (envoie un message au bot puis consulte
+      https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates pour le trouver).
+    </div>
     <div class="form-actions">
       <button class="btn btn-primary" id="save-key-btn">Enregistrer</button>
       <button class="btn btn-outline" id="cancel-settings-btn">Fermer</button>
@@ -1349,6 +1579,9 @@ function renderSettingsPanel() {
   document.getElementById("save-key-btn").addEventListener("click", () => {
     const val = document.getElementById("s-apikey").value.trim();
     saveApiKey(val);
+    const tgToken = document.getElementById("s-tgtoken").value.trim();
+    const tgChat = document.getElementById("s-tgchat").value.trim();
+    saveTelegramCreds(tgToken, tgChat);
     closePanel();
   });
 }
@@ -1376,9 +1609,23 @@ function renderPostsPanel() {
       <button class="btn btn-outline" id="regen-posts-btn">Régénérer</button>
       <button class="btn btn-outline" id="close-posts-btn">Fermer</button>
     </div>
+    ${g && g.text ? `
+      <button class="btn btn-outline" id="tg-send-posts-btn" style="width:100%;margin-top:8px">Envoyer par Telegram</button>
+      ${g.tgStatus ? `<div style="font-size:12px;margin-top:6px;color:${g.tgStatus.startsWith('Erreur') ? 'var(--red)' : 'var(--green)'}">${escapeHtml(g.tgStatus)}</div>` : ""}
+    ` : ""}
   `);
   document.getElementById("close-posts-btn").addEventListener("click", closePanel);
   document.getElementById("regen-posts-btn").addEventListener("click", generatePosts);
+  const tgBtn = document.getElementById("tg-send-posts-btn");
+  if (tgBtn) tgBtn.addEventListener("click", async () => {
+    try {
+      await sendTelegramMessage(g.text);
+      state.postsGen.tgStatus = "Envoyé sur Telegram avec succès.";
+    } catch (e) {
+      state.postsGen.tgStatus = "Erreur : " + e.message;
+    }
+    renderPostsPanel();
+  });
 }
 
 function renderDetailPanel(playerId) {
@@ -1392,7 +1639,7 @@ function renderDetailPanel(playerId) {
 
   openOverlayPanel(`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <div class="avatar avatar-lg">${initials(p.prenom,p.nom)}</div>
+      ${avatarHtml(p, "lg")}
       <div>
         <div style="font-size:18px;font-weight:700;font-family:'Space Grotesk',sans-serif">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div>
         <div style="font-size:12.5px;color:var(--muted)">${p.id}</div>
@@ -1404,6 +1651,14 @@ function renderDetailPanel(playerId) {
     <div class="detail-row"><span>Naissance</span><span>${p.naissance ? `${p.naissance} (${ageFromISO(p.naissance)} ans)` : "—"}</span></div>
     <div class="detail-row"><span>Nationalité</span><span>${escapeHtml(p.nationalite)}</span></div>
     <div class="detail-row"><span>Statut Mali</span><span>${escapeHtml(p.statutMali)}</span></div>
+
+    <div style="margin:18px 0 8px;font-size:13px;font-weight:600">Convocations sélection nationale</div>
+    ${(p.convocations || []).length === 0 ? `<div class="empty-row">Aucune convocation enregistrée.</div>` : (p.convocations || []).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c => `
+      <div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)">
+        <strong>${escapeHtml(c.categorie)}</strong> · ${c.date ? formatDateLabel(c.date) : "date inconnue"} · ${escapeHtml(c.competition || "")}
+        <div style="font-size:11px;color:var(--muted)">Statut : ${escapeHtml(c.statut)}</div>
+      </div>`).join("")}
+    <button class="btn btn-outline" id="add-convocation-btn" style="width:100%;margin-top:6px">+ Ajouter une convocation</button>
 
     <div style="margin:18px 0 8px;font-size:13px;font-weight:600">Prochains matchs</div>
     ${upcoming.length === 0 ? `<div class="empty-row">Aucun match à venir enregistré.</div>` : upcoming.map(m => `
@@ -1464,6 +1719,7 @@ function renderDetailPanel(playerId) {
     <button class="btn btn-outline-danger" id="deactivate-btn" style="width:100%;margin-top:8px">Désactiver ce joueur</button>
   `);
 
+  document.getElementById("add-convocation-btn").addEventListener("click", () => { state.panel = { type: "addConvocation", playerId: p.id }; renderPanel(); });
   document.getElementById("import-api-btn").addEventListener("click", () => importMatchesForPlayer(p.id));
   document.getElementById("import-af-btn").addEventListener("click", () => importMatchesForPlayerViaApiFootball(p.id));
   document.getElementById("import-sm-btn").addEventListener("click", () => importMatchesForPlayerViaSportmonks(p.id));
@@ -1479,12 +1735,16 @@ function renderEditPanel(playerId) {
   const existing = playerId ? playerById(playerId) : null;
   const form = existing ? { ...existing } : {
     nom:"", prenom:"", naissance:"", nationalite:"Mali", poste:"", pied:"Droit",
-    club:"", paysClub:"", categories:[], priorite:"P3", statutMali:"À surveiller"
+    club:"", paysClub:"", categories:[], priorite:"P3", statutMali:"À surveiller", photo:""
   };
 
   function draw(errorMsg) {
     openOverlayPanel(`
       <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:16px">${existing ? "Modifier le joueur" : "Ajouter un joueur"}</div>
+      <div class="field" style="text-align:center">
+        <div style="width:72px;height:72px;margin:0 auto 8px" id="photo-preview-wrap">${form.photo ? `<img src="${form.photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover" />` : `<div style="width:72px;height:72px;border-radius:50%;background:var(--indigo-bg);display:flex;align-items:center;justify-content:center;color:var(--indigo);font-weight:600">${initials(form.prenom, form.nom)}</div>`}</div>
+        <input type="file" id="f-photo" accept="image/*" style="font-size:12px" />
+      </div>
       <div class="field-row">
         <div class="field"><label>Prénom</label><input id="f-prenom" value="${escapeHtml(form.prenom)}" /></div>
         <div class="field"><label>Nom</label><input id="f-nom" value="${escapeHtml(form.nom)}" /></div>
@@ -1526,6 +1786,27 @@ function renderEditPanel(playerId) {
       </div>
     `);
 
+    document.getElementById("f-photo").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const size = 160;
+          const canvas = document.createElement("canvas");
+          canvas.width = size; canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          const scale = Math.max(size / img.width, size / img.height);
+          const w = img.width * scale, h = img.height * scale;
+          ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+          form.photo = canvas.toDataURL("image/jpeg", 0.85);
+          draw();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
     document.querySelectorAll("[data-cat]").forEach(el => el.addEventListener("click", () => {
       const c = el.dataset.cat;
       form.categories = form.categories.includes(c) ? form.categories.filter(x=>x!==c) : [...form.categories, c];
