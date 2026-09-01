@@ -149,6 +149,7 @@ const API_KEY_STORAGE = "mfc-radar-anthropic-key";
 const CLAUDE_MODEL = "claude-sonnet-5";
 const NEWS_CACHE_KEY = "mfc-radar-news-cache";
 const NEWS_MAX_AGE_MS = 6 * 3600 * 1000;
+const STATS_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 const CATEGORY_STYLE = {
   A: "A", U23: "U23", NEXT: "NEXT", Diaspora: "Diaspora"
@@ -197,6 +198,8 @@ let state = {
   importStatusAF: {},
   importStatusSM: {},
   playerStats: {},
+  top5: null, // {loading, progress, total, results, scannedCount, foundCount}
+  top5Posts: null, // {loading, text, error}
   apiKey: "",
   postsGen: null, // {loading, text, error}
   newsState: null // {loading, text, error, fetchedAt, needsKey}
@@ -433,6 +436,32 @@ function buildDashboardSummary() {
     const p = playerById(m.playerId);
     lines.push(`- ${formatDateLabel(m.date)} ${m.heure} · ${p ? p.prenom + " " + p.nom : "?"} · ${p ? p.club : "?"} vs ${m.adversaire} · ${m.competition} · source: ${m.source || "Manuel"}`);
   });
+  lines.push("");
+  lines.push("Statistiques joueurs récupérées (Highlightly) :");
+  const statsEntries = Object.entries(state.playerStats).filter(([, s]) => s && s.raw);
+  if (statsEntries.length === 0) {
+    lines.push("- Aucune statistique récupérée pour le moment (clique sur \"Voir les statistiques\" sur une fiche joueur avant de générer un post de type MFC Data).");
+  } else {
+    statsEntries.forEach(([playerId, s]) => {
+      const p = playerById(playerId);
+      const name = p ? `${p.prenom} ${p.nom}` : (s.playerName || "Joueur inconnu");
+      const competitions = s.raw.perCompetition || (Array.isArray(s.raw) ? s.raw : [s.raw]);
+      competitions.forEach(c => {
+        const parts = [];
+        if (c.club) parts.push(`club: ${c.club}`);
+        if (c.league) parts.push(`compétition: ${c.league}`);
+        if (c.season) parts.push(`saison: ${c.season}`);
+        if (c.gamesPlayed !== undefined) parts.push(`matchs joués: ${c.gamesPlayed}`);
+        if (c.goals !== undefined) parts.push(`buts: ${c.goals}`);
+        if (c.assists !== undefined) parts.push(`passes décisives: ${c.assists}`);
+        if (c.minutesPlayed !== undefined) parts.push(`minutes jouées: ${c.minutesPlayed}`);
+        if (c.yellowCards !== undefined) parts.push(`cartons jaunes: ${c.yellowCards}`);
+        if (c.redCards !== undefined) parts.push(`cartons rouges: ${c.redCards}`);
+        lines.push(`- ${name} · ${parts.join(", ")}`);
+      });
+    });
+  }
+
   return lines.join("\n");
 }
 
@@ -726,6 +755,124 @@ async function importMatchesForPlayerViaSportmonks(playerId) {
   render();
 }
 
+function computeScoreFromEntry(e) {
+  const games = e.gamesPlayed || 0;
+  const minutes = e.minutesPlayed || 0;
+  const avgMinutes = games > 0 ? minutes / games : 0;
+  const minutesScore = Math.min(avgMinutes / 90, 1) * 10;
+  const goals = e.goals || 0;
+  const assists = e.assists || 0;
+  return minutesScore + goals * 4 + assists * 2;
+}
+
+function bestEntryForPlayer(raw) {
+  const entries = raw.perCompetition || (Array.isArray(raw) ? raw : [raw]);
+  let best = null;
+  entries.forEach(e => {
+    const s = computeScoreFromEntry(e);
+    if (!best || s > best.score) best = { entry: e, score: s };
+  });
+  return best;
+}
+
+async function computeTop5() {
+  const players = state.players.filter(p => p.actif);
+  state.top5 = { loading: true, progress: 0, total: players.length };
+  render();
+
+  const results = [];
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    state.top5.progress = i + 1;
+    render();
+
+    let cached = state.playerStats[p.id];
+    let raw = cached && cached.raw && cached.fetchedAt && (Date.now() - cached.fetchedAt < STATS_MAX_AGE_MS) ? cached.raw : null;
+    if (!raw) {
+      try {
+        const found = await highlightlySearchPlayer(`${p.prenom} ${p.nom}`);
+        if (found) {
+          const foundId = found.id || found.playerId;
+          const stats = await highlightlyPlayerStatistics(foundId);
+          state.playerStats[p.id] = { loading: false, playerName: found.name, raw: stats, fetchedAt: Date.now() };
+          raw = stats;
+        } else {
+          state.playerStats[p.id] = { loading: false, error: "not_found" };
+        }
+      } catch (e) {
+        state.playerStats[p.id] = { loading: false, error: "network", detail: e.message };
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    if (raw) {
+      const best = bestEntryForPlayer(raw);
+      if (best && best.score > 0) {
+        results.push({ player: p, entry: best.entry, score: best.score });
+      }
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  state.top5 = {
+    loading: false,
+    results: results.slice(0, 5),
+    scannedCount: players.length,
+    foundCount: results.length
+  };
+  render();
+}
+
+async function generateTop5Posts() {
+  if (!state.apiKey) {
+    state.panel = { type: "settings" };
+    render();
+    return;
+  }
+  if (!state.top5 || !state.top5.results || state.top5.results.length === 0) return;
+
+  state.top5Posts = { loading: true };
+  render();
+
+  const lines = state.top5.results.map((r, i) => {
+    const e = r.entry;
+    const parts = [];
+    if (e.club) parts.push(`club: ${e.club}`);
+    if (e.league) parts.push(`compétition: ${e.league}`);
+    if (e.season) parts.push(`saison: ${e.season}`);
+    if (e.gamesPlayed !== undefined) parts.push(`matchs joués: ${e.gamesPlayed}`);
+    if (e.minutesPlayed !== undefined) parts.push(`minutes jouées: ${e.minutesPlayed}`);
+    if (e.goals !== undefined) parts.push(`buts: ${e.goals}`);
+    if (e.assists !== undefined) parts.push(`passes décisives: ${e.assists}`);
+    return `${i + 1}. ${r.player.prenom} ${r.player.nom} (${r.player.club}) — ${parts.join(", ")}`;
+  }).join("\n");
+
+  const prompt = `Tu es le rédacteur du compte "Mali Football Connect" (MFC), sur TikTok et X.
+
+Voici le Top 5 de la semaine, calculé à partir du temps de jeu et des performances (statistiques de saison en cours, seule granularité disponible) :
+
+${lines}
+
+Rédige 5 posts distincts, un par joueur, dans l'ordre du classement (1 = meilleur). Pour chaque post :
+1. Précise le classement (ex. "N°1 du Top 5 MFC")
+2. Une accroche courte et percutante
+3. Un corps de texte de 2-3 phrases maximum, basé uniquement sur les statistiques fournies ci-dessus
+4. Des hashtags pertinents incluant toujours #MFC #MaliFootball #Top5MFC
+
+Règles strictes :
+- N'utilise que les statistiques fournies, n'invente aucun chiffre
+- Sépare bien chaque post par "---"
+- Réponds directement avec le texte des 5 posts, sans préambule ni conclusion`;
+
+  try {
+    const text = await callClaude(prompt, null, 45000);
+    state.top5Posts = { loading: false, text };
+  } catch (e) {
+    state.top5Posts = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
 async function fetchPlayerStatsFromHighlightly(playerId) {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return;
@@ -740,7 +887,7 @@ async function fetchPlayerStatsFromHighlightly(playerId) {
     }
     const foundId = found.id || found.playerId;
     const stats = await highlightlyPlayerStatistics(foundId);
-    state.playerStats[playerId] = { loading: false, playerName: found.name || searchName, raw: stats };
+    state.playerStats[playerId] = { loading: false, playerName: found.name || searchName, raw: stats, fetchedAt: Date.now() };
   } catch (e) {
     state.playerStats[playerId] = { loading: false, error: "network", detail: e.message };
   }
@@ -825,6 +972,7 @@ function render() {
         <button class="btn btn-outline" id="test-api-btn">${state.apiTest && state.apiTest.loading ? "Test en cours…" : "Tester TheSportsDB"}</button>
         <button class="btn btn-outline" id="test-highlightly-btn">${state.highlightlyTest && state.highlightlyTest.loading ? "Test en cours…" : "Tester Highlightly"}</button>
         <button class="btn btn-outline" id="gen-posts-btn">Générer le post du jour</button>
+        <button class="btn btn-outline" id="top5-btn">Top 5 de la semaine</button>
         <button class="btn btn-outline" id="settings-btn" title="Réglages">⚙</button>
         <button class="btn btn-outline" id="bulk-import-btn">Importer en masse</button>
         <button class="btn btn-primary" id="add-player-btn">+ Ajouter un joueur</button>
@@ -890,6 +1038,7 @@ function render() {
   document.getElementById("test-api-btn").addEventListener("click", testApiConnection);
   document.getElementById("test-highlightly-btn").addEventListener("click", testHighlightlyConnection);
   document.getElementById("gen-posts-btn").addEventListener("click", generatePosts);
+  document.getElementById("top5-btn").addEventListener("click", () => { state.panel = { type: "top5" }; renderPanel(); });
   document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
   document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
   document.getElementById("bulk-import-btn").addEventListener("click", () => { state.panel = { type: "bulkImport" }; renderPanel(); });
@@ -1098,6 +1247,61 @@ function formatStatEntry(entry) {
     </div>`;
 }
 
+function renderTop5Panel() {
+  const t = state.top5;
+  const tp = state.top5Posts;
+
+  let body = "";
+  if (!t) {
+    body = `
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">
+        Analyse les ${state.players.filter(p=>p.actif).length} joueurs actifs de la Master List et calcule un classement
+        basé sur le temps de jeu moyen par match et les performances (buts, passes décisives) de la saison en cours.
+        Les statistiques de moins de 7 jours sont réutilisées automatiquement (pas de nouvelle requête inutile).
+      </div>
+      <div class="banner banner-gold">
+        Attention : ceci peut consommer une grande partie de ton quota gratuit Highlightly (jusqu'à ~2 requêtes par joueur non encore analysé).
+        Les joueurs déjà consultés via "Voir les statistiques" ne seront pas re-interrogés.
+      </div>
+      <button class="btn btn-primary" id="run-top5-btn" style="width:100%">Lancer l'analyse</button>
+    `;
+  } else if (t.loading) {
+    body = `<div class="empty-row">Analyse en cours… ${t.progress} / ${t.total} joueurs</div>`;
+  } else {
+    body = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        ${t.scannedCount} joueurs analysés, statistiques trouvées pour ${t.foundCount}.
+      </div>
+      ${t.results.length === 0 ? `<div class="empty-row">Aucun joueur avec des statistiques exploitables trouvé.</div>` : t.results.map((r, i) => `
+        <div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--paper)">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">#${i+1} — ${escapeHtml(r.player.prenom)} ${escapeHtml(r.player.nom)}</div>
+          <div style="font-size:11.5px;color:var(--muted)">
+            ${escapeHtml(r.entry.club || r.player.club)} · ${escapeHtml(r.entry.league || "")} ${r.entry.season ? "· " + escapeHtml(r.entry.season) : ""}<br/>
+            ${r.entry.gamesPlayed !== undefined ? r.entry.gamesPlayed + " matchs · " : ""}${r.entry.goals !== undefined ? r.entry.goals + " buts · " : ""}${r.entry.assists !== undefined ? r.entry.assists + " passes D." : ""}
+          </div>
+        </div>`).join("")}
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn btn-outline" id="rerun-top5-btn">Relancer l'analyse</button>
+        ${t.results.length > 0 ? `<button class="btn btn-primary" id="gen-top5-posts-btn" ${tp && tp.loading ? "disabled" : ""}>${tp && tp.loading ? "Rédaction en cours…" : "Générer les 5 posts"}</button>` : ""}
+      </div>
+      ${tp && !tp.loading && tp.error ? `<div class="form-error" style="margin-top:10px">${escapeHtml(tp.error)}</div>` : ""}
+      ${tp && !tp.loading && tp.text ? `<textarea readonly style="width:100%;min-height:320px;font-size:12.5px;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);margin-top:10px">${escapeHtml(tp.text)}</textarea>` : ""}
+    `;
+  }
+
+  openOverlayPanel(`
+    <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:12px">Top 5 de la semaine</div>
+    ${body}
+  `);
+
+  const runBtn = document.getElementById("run-top5-btn");
+  if (runBtn) runBtn.addEventListener("click", computeTop5);
+  const rerunBtn = document.getElementById("rerun-top5-btn");
+  if (rerunBtn) rerunBtn.addEventListener("click", computeTop5);
+  const genBtn = document.getElementById("gen-top5-posts-btn");
+  if (genBtn) genBtn.addEventListener("click", generateTop5Posts);
+}
+
 function renderPanel() {
   if (!state.panel) return;
   if (state.panel.type === "detail") renderDetailPanel(state.panel.playerId);
@@ -1106,6 +1310,7 @@ function renderPanel() {
   else if (state.panel.type === "settings") renderSettingsPanel();
   else if (state.panel.type === "posts") renderPostsPanel();
   else if (state.panel.type === "bulkImport") renderBulkImportPanel();
+  else if (state.panel.type === "top5") renderTop5Panel();
 }
 
 function renderSettingsPanel() {
