@@ -1060,6 +1060,33 @@ function renderBulkImportPanel() {
   draw();
 }
 
+function formatStatEntry(entry) {
+  const rows = [
+    ["Matchs joués", entry.gamesPlayed],
+    ["Buts", entry.goals],
+    ["Passes décisives", entry.assists],
+    ["Minutes jouées", entry.minutesPlayed],
+    ["Cartons jaunes", entry.yellowCards],
+    ["Cartons rouges", entry.redCards],
+    ["Entrées en jeu", entry.substitutedIn],
+    ["Sorties", entry.substitutedOut],
+  ].filter(([, v]) => v !== undefined && v !== null);
+
+  return `
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--paper)">
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">
+        ${escapeHtml(entry.league || "Compétition")} ${entry.season ? "· " + escapeHtml(entry.season) : ""}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px 12px">
+        ${rows.map(([label, val]) => `
+          <div style="display:flex;justify-content:space-between;font-size:12px">
+            <span style="color:var(--muted)">${label}</span>
+            <span style="font-weight:500">${escapeHtml(String(val))}</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
+}
+
 function renderPanel() {
   if (!state.panel) return;
   if (state.panel.type === "detail") renderDetailPanel(state.panel.playerId);
@@ -1191,8 +1218,10 @@ function renderDetailPanel(playerId) {
       ${stats && !stats.loading && stats.error === "not_found" ? `<div class="form-error">Joueur non trouvé sur Highlightly pour « ${escapeHtml(p.prenom)} ${escapeHtml(p.nom)} ».</div>` : ""}
       ${stats && !stats.loading && stats.error === "network" ? `<div class="form-error">Relais Highlightly indisponible${stats.detail ? " : " + escapeHtml(stats.detail) : ""}.</div>` : ""}
       ${stats && !stats.loading && stats.raw ? `
-        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:180px;overflow:auto;font-family:monospace;white-space:pre-wrap">${escapeHtml(JSON.stringify(stats.raw, null, 2)).slice(0, 1500)}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Trouvé sous le nom : ${escapeHtml(stats.playerName)} — format brut affiché en attendant d'affiner la présentation.</div>
+        <div style="margin-top:8px">
+          ${(Array.isArray(stats.raw) ? stats.raw : [stats.raw]).map(formatStatEntry).join("")}
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Trouvé sous le nom : ${escapeHtml(stats.playerName)} (source : Highlightly)</div>
       ` : ""}
     </div>
 
