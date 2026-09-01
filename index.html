@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MFC Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12100D;
+    --paper: #F3E9D6;
+    --paper-raised: #FBF5E8;
+    --line: #DCCFB0;
+    --terracotta: #A8461D;
+    --terracotta-bg: #F1DCCB;
+    --indigo: #1F3D5C;
+    --indigo-bg: #DCE3E9;
+    --gold-bg: #F1E7C6;
+    --gold-fg: #7A5C10;
+    --green: #3F7D52;
+    --green-bg: #DCEADF;
+    --red: #B23A2E;
+    --muted: #6B6355;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  #app { padding: 28px 24px 60px; max-width: 1100px; margin: 0 auto; }
+  h1, h2 { font-family: 'Space Grotesk', sans-serif; margin: 0; }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+  input, select {
+    font-family: inherit;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 13.5px;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .subtitle { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+  .btn {
+    padding: 9px 14px;
+    border-radius: 6px;
+    border: none;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .btn-primary { background: var(--terracotta); color: #FBEFE7; }
+  .btn-outline { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  .btn-outline-danger { background: transparent; border: 1px solid var(--line); color: var(--red); }
+  .banner { font-size: 12.5px; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+  .banner-gold { background: var(--gold-bg); color: #5C4508; }
+  .banner-green { background: var(--green-bg); color: var(--green); }
+  .banner-red { background: #F7DEDB; color: var(--red); }
+  .summary-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 16px; margin-bottom: 24px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .stat-value { font-size: 22px; font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
+  .stat-label { font-size: 12px; color: var(--muted); }
+  .chip {
+    padding: 6px 13px; border-radius: 16px; border: 1px solid var(--line);
+    background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 500;
+  }
+  .chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .section { margin-bottom: 28px; }
+  .section h2 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .match-row {
+    display: flex; align-items: center; gap: 12px; padding: 9px 12px;
+    border-bottom: 1px solid var(--line); font-size: 13.5px;
+  }
+  .match-row.today { background: var(--paper-raised); border-bottom: none; border-radius: 6px; margin-bottom: 4px; }
+  .match-time { font-size: 13px; font-weight: 600; width: 48px; }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; margin-right: 4px;
+    display: inline-block;
+  }
+  .badge-A { background: var(--terracotta-bg); color: var(--terracotta); }
+  .badge-U23 { background: var(--indigo-bg); color: var(--indigo); }
+  .badge-NEXT { background: var(--gold-bg); color: var(--gold-fg); }
+  .badge-Diaspora { background: var(--green-bg); color: var(--green); }
+  .day-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .player-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; padding: 14px; cursor: pointer; }
+  .player-card:hover { border-color: var(--indigo); }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 50%; background: var(--indigo); color: #E6EDF3;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;
+  }
+  .avatar-lg { width: 48px; height: 48px; font-size: 16px; }
+  .player-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .player-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-club { font-size: 12px; color: var(--muted); }
+  .empty-row { font-size: 13px; color: var(--muted); padding: 8px 0; }
+  #overlay {
+    display: none; position: fixed; inset: 0; background: rgba(18,16,13,0.25); z-index: 10;
+  }
+  #panel {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 90vw;
+    background: var(--paper-raised); border-left: 1px solid var(--line);
+    box-shadow: -4px 0 16px rgba(18,16,13,0.12); padding: 20px 20px 40px; overflow-y: auto; z-index: 11;
+  }
+  .panel-close { background: none; border: none; font-size: 18px; color: var(--muted); float: right; }
+  .detail-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+  .detail-row span:first-child { color: var(--muted); }
+  .detail-row span:last-child { font-weight: 500; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .cat-toggle {
+    padding: 5px 11px; border-radius: 14px; border: 1px solid var(--line);
+    background: transparent; color: var(--ink); font-size: 12px; margin-right: 6px; margin-bottom: 6px;
+  }
+  .cat-toggle.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .form-error { font-size: 12.5px; color: var(--red); margin-bottom: 10px; }
+  .form-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .form-actions .btn { flex: 1; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="overlay"></div>
+<div id="panel"></div>
+
+<script>
+const THESPORTSDB_KEY = "123";
+const THESPORTSDB_BASE = `https://www.thesportsdb.com/api/v1/json/${THESPORTSDB_KEY}`;
+const STORAGE_KEY = "mfc-radar-data";
+const API_KEY_STORAGE = "mfc-radar-anthropic-key";
+const CLAUDE_MODEL = "claude-sonnet-5";
+const NEWS_CACHE_KEY = "mfc-radar-news-cache";
+const NEWS_MAX_AGE_MS = 6 * 3600 * 1000;
+
+const CATEGORY_STYLE = {
+  A: "A", U23: "U23", NEXT: "NEXT", Diaspora: "Diaspora"
+};
+const PRIORITY_LABEL = { P1: "Priorité 1", P2: "Priorité 2", P3: "Surveillance" };
+
+function todayISO() { return new Date().toISOString().slice(0,10); }
+function addDays(n) { const d = new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function formatDateLabel(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const jours = ["dim","lun","mar","mer","jeu","ven","sam"];
+  const mois = ["jan","fev","mar","avr","mai","juin","juil","aout","sep","oct","nov","dec"];
+  return `${jours[d.getDay()]} ${d.getDate()} ${mois[d.getMonth()]}`;
+}
+function ageFromISO(iso) {
+  const b = new Date(iso);
+  return Math.floor((Date.now() - b.getTime()) / (365.25*24*3600*1000));
+}
+function initials(prenom, nom) {
+  return `${(prenom||"?")[0]||""}${(nom||"?")[0]||""}`.toUpperCase();
+}
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+const SEED_PLAYERS = [
+  { id:"MFC-0001", nom:"Tia", prenom:"Martial", naissance:"2008-03-12", nationalite:"Mali", poste:"Ailier", pied:"Droit", club:"Stade de Reims", paysClub:"France", categories:["NEXT"], priorite:"P1", statutMali:"À surveiller", actif:true },
+  { id:"MFC-0002", nom:"Kanate", prenom:"Ibrahim", naissance:"2007-05-02", nationalite:"Mali", poste:"Ailier", pied:"Gauche", club:"Kaiserslautern", paysClub:"Allemagne", categories:["NEXT","Diaspora"], priorite:"P2", statutMali:"Éligible", actif:true },
+  { id:"MFC-0003", nom:"Sissoko", prenom:"Pape", naissance:"2006-01-18", nationalite:"Mali", poste:"Attaquant", pied:"Droit", club:"SV Ried", paysClub:"Autriche", categories:["NEXT"], priorite:"P2", statutMali:"Éligible", actif:true },
+  { id:"MFC-0004", nom:"Diawara", prenom:"Bakary", naissance:"2006-09-30", nationalite:"Mali", poste:"Milieu", pied:"Droit", club:"Sochaux", paysClub:"France", categories:["NEXT"], priorite:"P3", statutMali:"À surveiller", actif:true }
+];
+const SEED_MATCHES = [
+  { id:"M-0001", playerId:"MFC-0001", competition:"Ligue 2 (exemple)", adversaire:"À confirmer", domicile:true, date:todayISO(), heure:"20:00", statut:"Programmé", source:"Manuel" },
+  { id:"M-0002", playerId:"MFC-0002", competition:"DFB-Pokal (exemple)", adversaire:"À confirmer", domicile:false, date:addDays(3), heure:"18:30", statut:"Programmé", source:"Manuel" }
+];
+
+let state = {
+  players: [],
+  matches: [],
+  query: "",
+  filter: "Tous",
+  panel: null, // {type:'detail'|'edit'|'addMatch'|'settings'|'posts', playerId}
+  apiTest: null,
+  importStatus: {},
+  importStatusAF: {},
+  importStatusSM: {},
+  apiKey: "",
+  postsGen: null, // {loading, text, error}
+  newsState: null // {loading, text, error, fetchedAt, needsKey}
+};
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) throw new Error("empty");
+    const parsed = JSON.parse(raw);
+    state.players = parsed.players || [];
+    state.matches = parsed.matches || [];
+  } catch (e) {
+    const lines = BULK_IMPORT_TEMPLATE.split("\n").map(l => l.trim()).filter(Boolean);
+    state.players = lines.map(parseBulkImportLine).filter(Boolean).map((p, i) => ({
+      ...p,
+      id: "MFC-" + String(1000 + i + 1).slice(1)
+    }));
+    state.matches = [];
+  }
+  try {
+    state.apiKey = localStorage.getItem(API_KEY_STORAGE) || "";
+  } catch (e) {
+    state.apiKey = "";
+  }
+}
+function saveApiKey(key) {
+  state.apiKey = key;
+  try {
+    localStorage.setItem(API_KEY_STORAGE, key);
+  } catch (e) {
+    console.error("Sauvegarde de la clé impossible", e);
+  }
+}
+function saveData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ players: state.players, matches: state.matches }));
+  } catch (e) {
+    console.error("Sauvegarde locale impossible", e);
+  }
+}
+
+async function sportsDbSearchTeam(teamName) {
+  const res = await fetch(`${THESPORTSDB_BASE}/searchteams.php?t=${encodeURIComponent(teamName)}`);
+  if (!res.ok) throw new Error("network");
+  const data = await res.json();
+  if (!data.teams || data.teams.length === 0) return null;
+  return data.teams[0];
+}
+async function sportsDbNextEvents(teamId) {
+  const res = await fetch(`${THESPORTSDB_BASE}/eventsnext.php?id=${teamId}`);
+  if (!res.ok) throw new Error("network");
+  const data = await res.json();
+  return data.events || [];
+}
+async function sportsDbPing() {
+  const res = await fetch(`${THESPORTSDB_BASE}/search_all_teams.php?l=English%20Premier%20League`);
+  if (!res.ok) throw new Error("network");
+  const data = await res.json();
+  return (data.teams || []).length;
+}
+
+async function apiFootballCall(endpoint, params) {
+  const qs = new URLSearchParams({ endpoint, ...params }).toString();
+  const res = await fetch(`/.netlify/functions/football?${qs}`);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `Erreur du relais (statut ${res.status}).`);
+  }
+  return res.json();
+}
+
+async function apiFootballSearchTeam(teamName) {
+  const data = await apiFootballCall("teams", { search: teamName });
+  if (data.errors && Object.keys(data.errors).length) {
+    throw new Error(typeof data.errors === "string" ? data.errors : JSON.stringify(data.errors));
+  }
+  if (!data.response || data.response.length === 0) return null;
+  return data.response[0].team; // { id, name, country, logo, ... }
+}
+
+async function apiFootballNextFixtures(teamId, count) {
+  const data = await apiFootballCall("fixtures", { team: teamId, next: count || 5 });
+  if (data.errors && Object.keys(data.errors).length) {
+    throw new Error(typeof data.errors === "string" ? data.errors : JSON.stringify(data.errors));
+  }
+  return data.response || [];
+}
+
+async function sportmonksCall(path, params) {
+  const qs = new URLSearchParams({ path, ...(params || {}) }).toString();
+  const res = await fetch(`/.netlify/functions/sportmonks?${qs}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Erreur du relais Sportmonks (statut ${res.status}).`);
+  }
+  return data;
+}
+
+async function sportmonksSearchTeam(teamName) {
+  const data = await sportmonksCall(`teams/search/${encodeURIComponent(teamName)}`);
+  if (!data.data || data.data.length === 0) return null;
+  return data.data[0]; // { id, name, ... }
+}
+
+async function sportmonksNextFixtures(teamId, count) {
+  const data = await sportmonksCall(`teams/${teamId}`, { include: "upcoming.participants;upcoming.league" });
+  const fixtures = (data.data && data.data.upcoming) || [];
+  return fixtures.slice(0, count || 5);
+}
+
+const PORTRAIT_SCHEDULE = [
+  { player: "Ange Martial Tia", angle: "La pépite qui frappe à la porte" },
+  { player: "Mamadou Coulibaly", angle: "Le Monégasque à surveiller" },
+  { player: "Bourama Dembélé", angle: "Le jeune défenseur de Granada" },
+  { player: "Émile Doucouré", angle: "Le gardien du futur" },
+  { player: "Bakary Diawara", angle: "17 ans et déjà professionnel" },
+  { player: "Issa Tounkara", angle: "De capitaine U17 à nouveau défi" },
+  { player: "Moulaye Haïdara", angle: "Le jeune attaquant du Rapid Vienne" },
+  { player: "Soungoutou Magassa", angle: "Le profil à suivre" },
+  { player: "Seydou Dembélé", angle: "MFC NEXT — talent à détecter" },
+  { player: "Mamadou Sangaré", angle: "Le milieu qui monte en puissance" }
+];
+
+const EDITORIAL_FORMATS = {
+  0: { name: "XI MFC de la semaine", time: "20h30", objective: "Meilleur XI de la semaine : dernière sélection des Aigles + forme du week-end + U23/NEXT + équilibre tactique." },
+  1: { name: "Les Maliens du week-end", time: "08h00", objective: "Performances marquantes du vendredi au dimanche." },
+  2: { name: "MFC Data", time: "12h30", objective: "Une statistique ou performance individuelle à retenir." },
+  3: { name: "Portrait MFC", time: "12h30", objective: "Un joueur de la semaine : parcours, profil et potentiel." },
+  4: { name: "MFC Predict", time: "20h00", objective: "Prédire le XI malien pour la prochaine échéance." },
+  5: { name: "Les Maliens à suivre", time: "18h00", objective: "Joueurs à surveiller avant le week-end." },
+  6: { name: "MFC Alert", time: "selon l'actu", objective: "Buts, passes, titularisations et performances marquantes du jour." }
+};
+
+function getISOWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getEditorialFormat(date) {
+  date = date || new Date();
+  return EDITORIAL_FORMATS[date.getDay()];
+}
+
+function getCurrentPortrait(date) {
+  const week = getISOWeekNumber(date || new Date());
+  const idx = (week - 1) % PORTRAIT_SCHEDULE.length;
+  return PORTRAIT_SCHEDULE[idx];
+}
+
+async function callClaude(prompt, tools, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 30000);
+  let res;
+  const body = {
+    model: CLAUDE_MODEL,
+    max_tokens: 1500,
+    messages: [{ role: "user", content: prompt }]
+  };
+  if (tools) body.tools = tools;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": state.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (networkErr) {
+    if (networkErr.name === "AbortError") {
+      throw new Error(`Délai dépassé (${Math.round((timeoutMs || 30000)/1000)}s) — la requête n'a pas abouti. Vérifie ta connexion ou réessaie.`);
+    }
+    throw new Error("Échec réseau : " + (networkErr.message || "impossible de contacter l'API Anthropic (souvent un blocage CORS ou réseau)."));
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  let bodyJson;
+  try {
+    bodyJson = await res.json();
+  } catch (parseErr) {
+    throw new Error(`Réponse illisible de l'API (statut ${res.status}).`);
+  }
+  if (!res.ok) {
+    throw new Error(bodyJson?.error?.message || `Erreur API (statut ${res.status}).`);
+  }
+  if (!bodyJson.content || !Array.isArray(bodyJson.content)) {
+    throw new Error("Réponse inattendue de l'API : pas de contenu retourné.");
+  }
+  return bodyJson.content.map(b => b.text || "").join("\n").trim();
+}
+
+function buildDashboardSummary() {
+  const today = todayISO();
+  const active = state.players.filter(p => p.actif);
+  const todays = state.matches.filter(m => m.date === today);
+  const upcoming = state.matches
+    .filter(m => m.date > today)
+    .sort((a,b) => a.date.localeCompare(b.date))
+    .slice(0, 10);
+
+  const lines = [];
+
+  lines.push("Actualités Mali / FEMAFOOT récentes :");
+  if (state.newsState && state.newsState.text) {
+    lines.push(state.newsState.text);
+    lines.push(`(vérifiées le ${state.newsState.fetchedAt ? new Date(state.newsState.fetchedAt).toLocaleString("fr-FR") : "date inconnue"})`);
+  } else {
+    lines.push("- Aucune actualité récupérée pour le moment (clique sur \"Actualiser\" dans le bloc actualités avant de générer un post qui en dépend).");
+  }
+  lines.push("");
+
+  lines.push("Joueurs suivis :");
+  active.forEach(p => {
+    lines.push(`- ${p.prenom} ${p.nom} (${p.club}, ${p.paysClub}) · catégories: ${p.categories.join(", ")} · priorité ${p.priorite} · statut Mali: ${p.statutMali}`);
+  });
+  lines.push("");
+  lines.push("Matchs aujourd'hui :");
+  if (todays.length === 0) lines.push("- Aucun");
+  todays.forEach(m => {
+    const p = playerById(m.playerId);
+    lines.push(`- ${p ? p.prenom + " " + p.nom : "?"} · ${m.heure} · ${p ? p.club : "?"} vs ${m.adversaire} · ${m.competition} · statut: ${m.statut} · source: ${m.source || "Manuel"}`);
+  });
+  lines.push("");
+  lines.push("Prochains matchs :");
+  if (upcoming.length === 0) lines.push("- Aucun");
+  upcoming.forEach(m => {
+    const p = playerById(m.playerId);
+    lines.push(`- ${formatDateLabel(m.date)} ${m.heure} · ${p ? p.prenom + " " + p.nom : "?"} · ${p ? p.club : "?"} vs ${m.adversaire} · ${m.competition} · source: ${m.source || "Manuel"}`);
+  });
+  return lines.join("\n");
+}
+
+async function generatePosts() {
+  if (!state.apiKey) {
+    state.panel = { type: "settings" };
+    render();
+    return;
+  }
+  state.postsGen = { loading: true };
+  state.panel = { type: "posts" };
+  render();
+
+  const summary = buildDashboardSummary();
+  const format = getEditorialFormat();
+  let formatInstructions = `Format du jour : "${format.name}" (publication prévue ${format.time}).\nObjectif de ce format : ${format.objective}`;
+
+  if (format.name === "Portrait MFC") {
+    const portrait = getCurrentPortrait();
+    formatInstructions += `\n\nJoueur prévu au calendrier éditorial pour le portrait de cette semaine : ${portrait.player} — angle suggéré : "${portrait.angle}". Si les données du tableau de bord ci-dessous ne contiennent pas assez d'informations vérifiées sur ce joueur pour un portrait complet, indique-le clairement. Si le radar (les données ci-dessous) montre qu'un autre joueur a une actualité nettement plus marquante cette semaine, tu peux proposer de le remplacer à la place, en le signalant explicitement comme un changement par rapport au calendrier prévu.`;
+  }
+
+  const prompt = `Tu es le rédacteur du compte "Mali Football Connect" (MFC), sur TikTok et X. MFC suit et raconte l'actualité des joueurs maliens et binationaux.
+
+${formatInstructions}
+
+Règles éditoriales MFC à respecter strictement :
+- Radar avant les noms : base-toi uniquement sur les données ci-dessous (joueurs, matchs, et actualités fédération), jamais sur des suppositions
+- Données vérifiées : si une information manque, indique-le clairement au lieu de la deviner ou de l'inventer
+- Si les actualités fédération ci-dessous contiennent une info plus pertinente pour le format du jour que les données joueurs/matchs, tu peux t'appuyer dessus (ex. nomination d'un sélectionneur, communiqué officiel)
+- Un seul post pour le format du jour
+
+Voici l'état actuel du tableau de bord :
+
+${summary}
+
+Rédige le post du jour dans le format "${format.name}" décrit ci-dessus :
+1. Une accroche courte et percutante
+2. Un corps de texte de 2 à 4 phrases maximum, adapté à l'objectif de ce format
+3. Une liste de hashtags pertinents, incluant toujours #MFC et #MaliFootball
+
+Réponds directement avec le texte du post, prêt à copier-coller, sans préambule ni conclusion.`;
+
+  try {
+    const text = await callClaude(prompt);
+    state.postsGen = { loading: false, text };
+  } catch (e) {
+    state.postsGen = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
+function loadNewsCache() {
+  try {
+    const raw = localStorage.getItem(NEWS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchFederationNews(force) {
+  if (state.newsState && state.newsState.loading) return;
+  if (!force) {
+    const cached = loadNewsCache();
+    if (cached && Date.now() - cached.fetchedAt < NEWS_MAX_AGE_MS) {
+      state.newsState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+      render();
+      return;
+    }
+  }
+  if (!state.apiKey) {
+    state.newsState = { needsKey: true };
+    render();
+    return;
+  }
+  state.newsState = { loading: true };
+  render();
+
+  const prompt = `Tu surveilles l'actualité de l'équipe nationale de football du Mali (les Aigles) et de sa fédération (FEMAFOOT).
+
+Cherche les informations les plus récentes possibles (idéalement des derniers jours) concernant :
+- Les convocations en sélection nationale (toutes catégories : A, U23, U20, U17)
+- Les communiqués officiels de la FEMAFOOT (sélectionneur, décisions disciplinaires, annonces institutionnelles)
+- L'actualité générale autour de l'équipe nationale
+
+Réponds avec une liste à puces courte (5 éléments maximum), chaque élément précisant la date si disponible. N'invente aucune information : si tu ne trouves rien de récent sur un sujet précis, dis-le simplement plutôt que de deviner. Réponds en français, de façon concise, sans préambule ni conclusion.`;
+
+  try {
+    const text = await callClaude(prompt, [{ type: "web_search_20250305", name: "web_search" }], 60000);
+    const fetchedAt = Date.now();
+    state.newsState = { loading: false, text, fetchedAt };
+    try {
+      localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({ text, fetchedAt }));
+    } catch (e) { /* stockage plein ou indisponible, on continue sans cache */ }
+  } catch (e) {
+    state.newsState = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
+function checkNewsOnLoad() {
+  const cached = loadNewsCache();
+  if (cached) {
+    state.newsState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+  }
+  if (!cached || Date.now() - cached.fetchedAt >= NEWS_MAX_AGE_MS) {
+    if (state.apiKey) fetchFederationNews(false);
+    else if (!cached) state.newsState = { needsKey: true };
+  }
+}
+
+async function testApiConnection() {
+  state.apiTest = { loading: true };
+  render();
+  try {
+    const count = await sportsDbPing();
+    state.apiTest = { loading: false, count };
+  } catch (e) {
+    state.apiTest = { loading: false, error: true };
+  }
+  render();
+}
+
+async function importMatchesForPlayer(playerId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return;
+  state.importStatus[playerId] = { loading: true };
+  render();
+  try {
+    const team = await sportsDbSearchTeam(player.club);
+    if (!team) {
+      state.importStatus[playerId] = { loading:false, error:"not_found" };
+      render(); return;
+    }
+    const events = await sportsDbNextEvents(team.idTeam);
+    if (events.length === 0) {
+      state.importStatus[playerId] = { loading:false, error:"no_events", teamName: team.strTeam };
+      render(); return;
+    }
+    const newMatches = events.map(ev => ({
+      id: "API-" + ev.idEvent,
+      playerId: player.id,
+      competition: ev.strLeague || "Compétition inconnue",
+      adversaire: ev.idHomeTeam === team.idTeam ? ev.strAwayTeam : ev.strHomeTeam,
+      domicile: ev.idHomeTeam === team.idTeam,
+      date: ev.dateEvent,
+      heure: (ev.strTime || "00:00:00").slice(0,5),
+      statut: "Programmé",
+      source: "TheSportsDB"
+    }));
+    const existingIds = new Set(state.matches.map(m => m.id));
+    const toAdd = newMatches.filter(m => !existingIds.has(m.id));
+    state.matches = [...state.matches, ...toAdd];
+    saveData();
+    state.importStatus[playerId] = { loading:false, success: newMatches.length, teamName: team.strTeam };
+  } catch (e) {
+    state.importStatus[playerId] = { loading:false, error:"network" };
+  }
+  render();
+}
+
+async function importMatchesForPlayerViaApiFootball(playerId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return;
+  state.importStatusAF[playerId] = { loading: true };
+  render();
+  try {
+    const team = await apiFootballSearchTeam(player.club);
+    if (!team) {
+      state.importStatusAF[playerId] = { loading: false, error: "not_found" };
+      render(); return;
+    }
+    const fixtures = await apiFootballNextFixtures(team.id, 5);
+    if (fixtures.length === 0) {
+      state.importStatusAF[playerId] = { loading: false, error: "no_events", teamName: team.name };
+      render(); return;
+    }
+    const newMatches = fixtures.map(fx => {
+      const isHome = fx.teams.home.id === team.id;
+      return {
+        id: "AF-" + fx.fixture.id,
+        playerId: player.id,
+        competition: fx.league?.name || "Compétition inconnue",
+        adversaire: isHome ? fx.teams.away.name : fx.teams.home.name,
+        domicile: isHome,
+        date: fx.fixture.date ? fx.fixture.date.slice(0, 10) : todayISO(),
+        heure: fx.fixture.date ? fx.fixture.date.slice(11, 16) : "00:00",
+        statut: "Programmé",
+        source: "API-Football"
+      };
+    });
+    const existingIds = new Set(state.matches.map(m => m.id));
+    const toAdd = newMatches.filter(m => !existingIds.has(m.id));
+    state.matches = [...state.matches, ...toAdd];
+    saveData();
+    state.importStatusAF[playerId] = { loading: false, success: newMatches.length, teamName: team.name };
+  } catch (e) {
+    state.importStatusAF[playerId] = { loading: false, error: "network", detail: e.message };
+  }
+  render();
+}
+
+async function importMatchesForPlayerViaSportmonks(playerId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return;
+  state.importStatusSM[playerId] = { loading: true };
+  render();
+  try {
+    const team = await sportmonksSearchTeam(player.club);
+    if (!team) {
+      state.importStatusSM[playerId] = { loading: false, error: "not_found" };
+      render(); return;
+    }
+    const fixtures = await sportmonksNextFixtures(team.id, 5);
+    if (fixtures.length === 0) {
+      state.importStatusSM[playerId] = { loading: false, error: "no_events", teamName: team.name };
+      render(); return;
+    }
+    const newMatches = fixtures.map(fx => {
+      const participants = fx.participants || [];
+      const home = participants.find(p => p.meta?.location === "home");
+      const away = participants.find(p => p.meta?.location === "away");
+      const isHome = home && home.id === team.id;
+      return {
+        id: "SM-" + fx.id,
+        playerId: player.id,
+        competition: fx.league?.name || "Compétition inconnue",
+        adversaire: isHome ? (away?.name || "?") : (home?.name || "?"),
+        domicile: !!isHome,
+        date: fx.starting_at ? fx.starting_at.slice(0, 10) : todayISO(),
+        heure: fx.starting_at ? fx.starting_at.slice(11, 16) : "00:00",
+        statut: "Programmé",
+        source: "Sportmonks"
+      };
+    });
+    const existingIds = new Set(state.matches.map(m => m.id));
+    const toAdd = newMatches.filter(m => !existingIds.has(m.id));
+    state.matches = [...state.matches, ...toAdd];
+    saveData();
+    state.importStatusSM[playerId] = { loading: false, success: newMatches.length, teamName: team.name };
+  } catch (e) {
+    state.importStatusSM[playerId] = { loading: false, error: "network", detail: e.message };
+  }
+  render();
+}
+
+function nextMatchFor(playerId) {
+  const today = todayISO();
+  return state.matches
+    .filter(m => m.playerId === playerId && m.date >= today)
+    .sort((a,b) => a.date.localeCompare(b.date))[0];
+}
+function filteredPlayers() {
+  return state.players.filter(p => {
+    if (!p.actif) return false;
+    const q = state.query.trim().toLowerCase();
+    const matchesQuery = q === "" || `${p.prenom} ${p.nom}`.toLowerCase().includes(q) || p.club.toLowerCase().includes(q);
+    if (!matchesQuery) return false;
+    if (state.filter === "Tous") return true;
+    if (state.filter === "P1") return p.priorite === "P1";
+    return p.categories.includes(state.filter);
+  });
+}
+function todayMatches() {
+  const today = todayISO();
+  return state.matches.filter(m => m.date === today).sort((a,b) => a.heure.localeCompare(b.heure));
+}
+function upcomingByDay() {
+  const today = todayISO();
+  const future = state.matches.filter(m => m.date > today);
+  const grouped = {};
+  future.forEach(m => { (grouped[m.date] = grouped[m.date] || []).push(m); });
+  return Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).slice(0,5);
+}
+function playerById(id) { return state.players.find(p => p.id === id); }
+
+function badgesHtml(categories) {
+  return categories.map(c => `<span class="badge badge-${c}">${CATEGORY_STYLE[c]}</span>`).join("");
+}
+function matchRowHtml(m, highlighted) {
+  const p = playerById(m.playerId);
+  if (!p) return "";
+  return `<div class="match-row ${highlighted ? 'today' : ''}">
+    <div class="match-time">${escapeHtml(m.heure)}</div>
+    <div style="flex:1">
+      <strong>${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</strong> · ${escapeHtml(p.club)} vs ${escapeHtml(m.adversaire)} · ${escapeHtml(m.competition)}
+    </div>
+    <div>${badgesHtml(p.categories)}</div>
+  </div>`;
+}
+function playerCardHtml(p) {
+  const nm = nextMatchFor(p.id);
+  return `<div class="player-card" data-open-detail="${p.id}">
+    <div class="player-card-head">
+      <div class="avatar">${initials(p.prenom, p.nom)}</div>
+      <div style="min-width:0">
+        <div class="player-name">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div>
+        <div class="player-club">${escapeHtml(p.club)}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:8px">${badgesHtml(p.categories)}<span style="font-size:11px;color:var(--muted)">${PRIORITY_LABEL[p.priorite]}</span></div>
+    <div style="font-size:12px;color:${nm ? 'var(--ink)' : 'var(--muted)'}">
+      ${nm ? `Prochain match : ${formatDateLabel(nm.date)}, ${nm.heure}` : "Aucun match à venir enregistré"}
+    </div>
+  </div>`;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const tm = todayMatches();
+  const ub = upcomingByDay();
+  const fp = filteredPlayers();
+
+  app.innerHTML = `
+    <div class="header">
+      <div>
+        <h1>MFC Radar</h1>
+        <p class="subtitle">Outil interne — préparation éditoriale</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input id="search-input" placeholder="Rechercher un joueur ou un club" style="width:240px" value="${escapeHtml(state.query)}" />
+        <button class="btn btn-outline" id="test-api-btn">${state.apiTest && state.apiTest.loading ? "Test en cours…" : "Tester TheSportsDB"}</button>
+        <button class="btn btn-outline" id="gen-posts-btn">Générer le post du jour</button>
+        <button class="btn btn-outline" id="settings-btn" title="Réglages">⚙</button>
+        <button class="btn btn-outline" id="bulk-import-btn">Importer en masse</button>
+        <button class="btn btn-primary" id="add-player-btn">+ Ajouter un joueur</button>
+      </div>
+    </div>
+
+    ${state.apiTest && !state.apiTest.loading ? `
+      <div class="banner ${state.apiTest.error ? 'banner-red' : 'banner-green'}">
+        ${state.apiTest.error ? "Connexion à TheSportsDB impossible pour le moment — réessaie plus tard." : `Connexion à TheSportsDB réussie — ${state.apiTest.count} équipes reçues en réponse de test.`}
+      </div>` : ""}
+
+    <div class="banner banner-gold">
+      Master List MFC chargée (53 joueurs). Les clubs marqués "À compléter" et le cas d'homonymie sur "Mamadou Doumbia" (catégories A et U23) restent à vérifier avant publication.
+    </div>
+
+    <div id="news-block" style="background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif">Actualités Mali &amp; FEMAFOOT</div>
+        <button class="btn btn-outline" id="refresh-news-btn" style="padding:4px 10px;font-size:11.5px">Actualiser</button>
+      </div>
+      ${renderNewsBody()}
+    </div>
+
+    <div class="summary-bar">
+      <div style="display:flex;gap:24px">
+        <div><div class="stat-value">${tm.length}</div><div class="stat-label">Aujourd'hui</div></div>
+        <div><div class="stat-value">${ub.reduce((a,[,ms])=>a+ms.length,0)}</div><div class="stat-label">Prochains jours</div></div>
+        <div><div class="stat-value">${state.players.filter(p=>p.actif).length}</div><div class="stat-label">Joueurs suivis</div></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${["Tous","A","U23","NEXT","Diaspora","P1"].map(f => `<button class="chip ${state.filter===f?'active':''}" data-filter="${f}">${f}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Aujourd'hui</h2>
+      ${tm.length === 0 ? `<div class="empty-row">Aucun match programmé aujourd'hui pour les joueurs suivis.</div>` : tm.map(m => matchRowHtml(m, true)).join("")}
+    </div>
+
+    <div class="section">
+      <h2>Prochains matchs</h2>
+      ${ub.length === 0 ? `<div class="empty-row">Aucun match à venir enregistré.</div>` : ub.map(([date, ms]) => `
+        <div style="margin-bottom:14px">
+          <div class="day-label">${formatDateLabel(date)}</div>
+          ${ms.sort((a,b)=>a.heure.localeCompare(b.heure)).map(m => matchRowHtml(m,false)).join("")}
+        </div>`).join("")}
+    </div>
+
+    <div class="section">
+      <h2>Tous les joueurs</h2>
+      <div class="roster-grid">
+        ${fp.length === 0 ? `<div class="empty-row">Aucun joueur ne correspond à ce filtre.</div>` : fp.map(playerCardHtml).join("")}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("search-input").addEventListener("input", e => { state.query = e.target.value; render(); });
+  document.getElementById("test-api-btn").addEventListener("click", testApiConnection);
+  document.getElementById("gen-posts-btn").addEventListener("click", generatePosts);
+  document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
+  document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
+  document.getElementById("bulk-import-btn").addEventListener("click", () => { state.panel = { type: "bulkImport" }; renderPanel(); });
+  document.getElementById("add-player-btn").addEventListener("click", () => openEditPlayer(null));
+  app.querySelectorAll("[data-filter]").forEach(el => el.addEventListener("click", () => { state.filter = el.dataset.filter; render(); }));
+  app.querySelectorAll("[data-open-detail]").forEach(el => el.addEventListener("click", () => openDetail(el.dataset.openDetail)));
+
+  renderPanel();
+}
+
+function openOverlayPanel(html) {
+  document.getElementById("overlay").style.display = "block";
+  const panel = document.getElementById("panel");
+  panel.style.display = "block";
+  panel.innerHTML = `<button class="panel-close" id="panel-close">×</button><div style="clear:both"></div>` + html;
+  document.getElementById("panel-close").addEventListener("click", closePanel);
+  document.getElementById("overlay").onclick = closePanel;
+}
+function closePanel() {
+  document.getElementById("overlay").style.display = "none";
+  document.getElementById("panel").style.display = "none";
+  state.panel = null;
+}
+
+function openDetail(playerId) {
+  state.panel = { type: "detail", playerId };
+  renderPanel();
+}
+function openEditPlayer(playerId) {
+  state.panel = { type: "edit", playerId };
+  renderPanel();
+}
+function openAddMatch(playerId) {
+  state.panel = { type: "addMatch", playerId };
+  renderPanel();
+}
+
+function renderNewsBody() {
+  const n = state.newsState;
+  if (!n) {
+    return `<div class="empty-row">Chargement des actualités…</div>`;
+  }
+  if (n.needsKey) {
+    return `<div style="font-size:12.5px;color:var(--muted)">Configure ta clé API (⚙) pour activer les actualités automatiques de la fédération.</div>`;
+  }
+  if (n.loading) {
+    return `<div class="empty-row">Recherche des actualités Mali / FEMAFOOT en cours… (jusqu'à 60 secondes, la recherche web prend plus de temps qu'une génération classique)</div>`;
+  }
+  if (n.error) {
+    return `<div class="form-error">${escapeHtml(n.error)}</div>`;
+  }
+  if (n.text) {
+    const ts = n.fetchedAt ? new Date(n.fetchedAt).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "";
+    return `<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escapeHtml(n.text)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Dernière vérification : ${ts}</div>`;
+  }
+  return `<div class="empty-row">Aucune actualité récupérée pour le moment.</div>`;
+}
+
+const BULK_IMPORT_TEMPLATE = `Djigui Diarra;A;P2;À compléter;Gardien
+Ismaël Diawara;A;P2;À compléter;Gardien
+Mamadou Samassa;A;P2;À compléter;Gardien
+Hamari Traoré;A;P2;À compléter;Défenseur
+Ousmane Camara;A;P2;À compléter;Défenseur
+Woyo Coulibaly;A;P2;À compléter;Défenseur
+Amadou Dante;A;P2;À compléter;Défenseur
+Abdoulaye Diaby;A;P2;À compléter;Défenseur
+Fodé Doucouré;A;P2;À compléter;Défenseur
+Mamadou Fofana;A;P2;À compléter;Défenseur
+Nathan Gassama;A;P2;À compléter;Défenseur
+Sikou Niakaté;A;P2;À compléter;Défenseur
+Moussa Diarra;A;P2;À compléter;Défenseur
+Yves Bissouma;A;P2;À compléter;Milieu
+Amadou Haidara;A;P2;RC Lens;Milieu
+Lassana Coulibaly;A;P2;À compléter;Milieu
+Mohamed Camara;A;P2;À compléter;Milieu
+Aliou Dieng;A;P2;À compléter;Milieu
+Mamadou Sangaré;A;P1;Brentford;Milieu
+Kamory Doumbia;A;P2;À compléter;Milieu
+Kalidou Sidibé;A;P2;À compléter;Milieu
+Moussa Diakité;A;P2;À compléter;Milieu
+Lassine Sinayoko;A;P2;Paris FC;Attaquant
+El Bilal Touré;A;P2;À compléter;Attaquant
+Ibrahima Koné;A;P2;À compléter;Attaquant
+Sékou Koïta;A;P2;À compléter;Attaquant
+Nene Dorgeles;A;P2;À compléter;Attaquant
+Sory Ibrahim Diarra;A;P2;À compléter;Attaquant
+Mamadou Doumbia;A;P3;À compléter;Attaquant — vérifier homonymie avec l'entrée U23
+Hamidou Makalou;U23;P2;À compléter;Priorité
+Ibrahim Kanaté;U23;P2;Kaiserslautern;Priorité
+Sekou Koné;U23;P2;À compléter;Priorité
+Ibrahim Diarra;U23,NEXT;P1;FC Barcelone;Jeune pro — priorité absolue
+Mahamoud Barry;U23,NEXT;P1;Villarreal;Jeune pro — priorité absolue
+Ange Martial Tia;U23,NEXT;P1;Stade de Reims;Jeune pro — priorité absolue
+Gaoussou Diakité;U23;P2;À compléter;Priorité
+Mamadou Doumbia;U23;P3;À compléter;Priorité — vérifier homonymie avec l'entrée A
+Ousmane Thiero;U23;P2;À compléter;Priorité
+Wilson Samaké;U23;P2;À compléter;Priorité
+Eden Gassama;U23,Diaspora;P3;À compléter;À surveiller
+Isiaka Soukouna;U23;P3;À compléter;À surveiller
+Dan Sinaté;U23,Diaspora;P3;À compléter;À surveiller
+Ibrahima Diakité;U23;P3;À compléter;À surveiller
+Boubakar Dembaga;U23;P3;À compléter;À surveiller
+Moulaye Haïdara;U23;P3;Rapid Vienne;À surveiller
+Aboubacar Sidiki Sidibé;U23;P3;À compléter;À surveiller
+Pape Sissoko;U23;P3;SV Ried;À surveiller
+Lamine Coulibaly;U23;P3;À compléter;À surveiller
+Seydou Dembélé;NEXT;P1;Stade de Reims;Talent — priorité absolue
+Issa Traoré;NEXT;P1;Bayer Leverkusen;Talent — développement pro
+Soungoutou Magassa;Diaspora,NEXT;P2;West Ham;Binational — priorité
+Oumar Kalifa Pona;Diaspora;P3;À compléter;Priorité 1/2
+Émile Doucouré;Diaspora;P3;À compléter;Priorité 1/2
+Souleymane Sagnan;Diaspora;P2;À compléter;Priorité`;
+
+function parseBulkImportLine(line) {
+  const parts = line.split(";").map(s => s.trim());
+  if (parts.length < 2 || !parts[0]) return null;
+  const [nom_prenom, catsRaw, prioRaw, club, remarque] = parts;
+  const cats = (catsRaw || "").split(",").map(s => s.trim()).filter(c => CATEGORY_STYLE[c]);
+  return {
+    prenom: nom_prenom.split(" ").slice(0, -1).join(" ") || nom_prenom,
+    nom: nom_prenom.split(" ").slice(-1).join(" "),
+    naissance: "",
+    nationalite: "Mali",
+    poste: (remarque && ["Gardien","Défenseur","Milieu","Attaquant"].includes(remarque)) ? remarque : "",
+    pied: "Droit",
+    club: club || "À compléter",
+    paysClub: "",
+    categories: cats.length ? cats : ["NEXT"],
+    priorite: ["P1","P2","P3"].includes(prioRaw) ? prioRaw : "P3",
+    statutMali: cats.includes("A") ? "International" : "Éligible",
+    actif: true,
+    remarque: remarque || ""
+  };
+}
+
+function renderBulkImportPanel() {
+  function draw(message) {
+    openOverlayPanel(`
+      <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:8px">Import en masse</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        Un joueur par ligne, format : <code>Nom;Catégories;Priorité;Club;Remarque</code> — catégories parmi A, U23, NEXT, Diaspora (séparées par virgule si plusieurs).
+        Le champ ci-dessous est déjà pré-rempli avec ta Master List.
+      </div>
+      <textarea id="bulk-textarea" style="width:100%;min-height:280px;font-size:12px;font-family:monospace;padding:8px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink)">${escapeHtml(BULK_IMPORT_TEMPLATE)}</textarea>
+      <div class="field" style="margin-top:10px">
+        <label><input type="checkbox" id="replace-existing" checked /> Remplacer les joueurs actuels (au lieu d'ajouter à la suite)</label>
+      </div>
+      ${message ? `<div style="font-size:12.5px;color:var(--green);margin-top:6px">${escapeHtml(message)}</div>` : ""}
+      <div class="form-actions" style="margin-top:12px">
+        <button class="btn btn-primary" id="do-import-btn">Importer</button>
+        <button class="btn btn-outline" id="cancel-import-btn">Annuler</button>
+      </div>
+    `);
+    document.getElementById("cancel-import-btn").addEventListener("click", closePanel);
+    document.getElementById("do-import-btn").addEventListener("click", () => {
+      const raw = document.getElementById("bulk-textarea").value;
+      const replace = document.getElementById("replace-existing").checked;
+      const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+      const parsed = lines.map(parseBulkImportLine).filter(Boolean);
+      const withIds = parsed.map((p, i) => ({ ...p, id: "MFC-" + String(1000 + (replace ? 0 : state.players.length) + i + 1).slice(1) }));
+      state.players = replace ? withIds : [...state.players, ...withIds];
+      saveData();
+      closePanel();
+      render();
+    });
+  }
+  draw();
+}
+
+function renderPanel() {
+  if (!state.panel) return;
+  if (state.panel.type === "detail") renderDetailPanel(state.panel.playerId);
+  else if (state.panel.type === "edit") renderEditPanel(state.panel.playerId);
+  else if (state.panel.type === "addMatch") renderAddMatchPanel(state.panel.playerId);
+  else if (state.panel.type === "settings") renderSettingsPanel();
+  else if (state.panel.type === "posts") renderPostsPanel();
+  else if (state.panel.type === "bulkImport") renderBulkImportPanel();
+}
+
+function renderSettingsPanel() {
+  openOverlayPanel(`
+    <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:16px">Réglages</div>
+    <div class="field">
+      <label>Clé API Anthropic</label>
+      <input type="password" id="s-apikey" placeholder="sk-ant-..." value="${escapeHtml(state.apiKey)}" />
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Ta clé reste uniquement dans ce navigateur (stockage local) et n'est envoyée qu'à Anthropic pour générer les posts.
+      Ne partage jamais ce fichier une fois ta clé enregistrée.
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="save-key-btn">Enregistrer</button>
+      <button class="btn btn-outline" id="cancel-settings-btn">Fermer</button>
+    </div>
+  `);
+  document.getElementById("cancel-settings-btn").addEventListener("click", closePanel);
+  document.getElementById("save-key-btn").addEventListener("click", () => {
+    const val = document.getElementById("s-apikey").value.trim();
+    saveApiKey(val);
+    closePanel();
+  });
+}
+
+function renderPostsPanel() {
+  const g = state.postsGen;
+  const format = getEditorialFormat();
+  let body = "";
+  if (g && g.loading) {
+    body = `<div class="empty-row">Claude rédige le post « ${escapeHtml(format.name)} »…</div>`;
+  } else if (g && g.error) {
+    body = `<div class="form-error">${escapeHtml(g.error)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Vérifie ta clé API dans les réglages, ou réessaie plus tard.</div>`;
+  } else if (g && g.text) {
+    body = `<textarea readonly style="width:100%;min-height:360px;font-size:13px;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink)">${escapeHtml(g.text)}</textarea>`;
+  } else {
+    body = `<div class="empty-row">Aucun post généré pour le moment.</div>`;
+  }
+
+  openOverlayPanel(`
+    <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:4px">Post du jour — ${escapeHtml(format.name)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Publication prévue ${escapeHtml(format.time)} · ${escapeHtml(format.objective)}</div>
+    ${body}
+    <div class="form-actions" style="margin-top:14px">
+      <button class="btn btn-outline" id="regen-posts-btn">Régénérer</button>
+      <button class="btn btn-outline" id="close-posts-btn">Fermer</button>
+    </div>
+  `);
+  document.getElementById("close-posts-btn").addEventListener("click", closePanel);
+  document.getElementById("regen-posts-btn").addEventListener("click", generatePosts);
+}
+
+function renderDetailPanel(playerId) {
+  const p = playerById(playerId);
+  if (!p) { closePanel(); return; }
+  const upcoming = state.matches.filter(m => m.playerId === p.id && m.date >= todayISO()).sort((a,b)=>a.date.localeCompare(b.date));
+  const imp = state.importStatus[p.id];
+  const impAF = state.importStatusAF[p.id];
+  const impSM = state.importStatusSM[p.id];
+
+  openOverlayPanel(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div class="avatar avatar-lg">${initials(p.prenom,p.nom)}</div>
+      <div>
+        <div style="font-size:18px;font-weight:700;font-family:'Space Grotesk',sans-serif">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div>
+        <div style="font-size:12.5px;color:var(--muted)">${p.id}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">${badgesHtml(p.categories)}<span style="font-size:12px;color:var(--muted)">${PRIORITY_LABEL[p.priorite]}</span></div>
+    <div class="detail-row"><span>Club</span><span>${escapeHtml(p.club)} (${escapeHtml(p.paysClub)})</span></div>
+    <div class="detail-row"><span>Poste</span><span>${escapeHtml(p.poste)} · pied ${escapeHtml((p.pied||"").toLowerCase())}</span></div>
+    <div class="detail-row"><span>Naissance</span><span>${p.naissance ? `${p.naissance} (${ageFromISO(p.naissance)} ans)` : "—"}</span></div>
+    <div class="detail-row"><span>Nationalité</span><span>${escapeHtml(p.nationalite)}</span></div>
+    <div class="detail-row"><span>Statut Mali</span><span>${escapeHtml(p.statutMali)}</span></div>
+
+    <div style="margin:18px 0 8px;font-size:13px;font-weight:600">Prochains matchs</div>
+    ${upcoming.length === 0 ? `<div class="empty-row">Aucun match à venir enregistré.</div>` : upcoming.map(m => `
+      <div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)">
+        ${formatDateLabel(m.date)} · ${m.heure} · vs ${escapeHtml(m.adversaire)} (${escapeHtml(m.competition)})
+        <div style="font-size:11px;color:var(--muted)">Source : ${escapeHtml(m.source || "Manuel")}</div>
+      </div>`).join("")}
+
+    <div style="margin:16px 0 6px">
+      <button class="btn btn-outline" id="import-api-btn" style="width:100%;color:var(--indigo)" ${imp && imp.loading ? "disabled" : ""}>
+        ${imp && imp.loading ? "Recherche sur TheSportsDB…" : "Importer les prochains matchs (TheSportsDB)"}
+      </button>
+      ${imp && !imp.loading && imp.error === "not_found" ? `<div class="form-error">Aucune équipe trouvée pour « ${escapeHtml(p.club)} » sur TheSportsDB.</div>` : ""}
+      ${imp && !imp.loading && imp.error === "no_events" ? `<div style="font-size:12px;color:var(--muted);margin-top:6px">Équipe trouvée (${escapeHtml(imp.teamName)}), mais aucun match à venir renseigné.</div>` : ""}
+      ${imp && !imp.loading && imp.error === "network" ? `<div class="form-error">Connexion à TheSportsDB impossible pour le moment.</div>` : ""}
+      ${imp && !imp.loading && imp.success !== undefined ? `<div style="font-size:12px;color:var(--green);margin-top:6px">${imp.success} match(s) importé(s) pour ${escapeHtml(imp.teamName)}.</div>` : ""}
+    </div>
+
+    <div style="margin:6px 0 6px">
+      <button class="btn btn-outline" id="import-af-btn" style="width:100%;color:var(--terracotta)" ${impAF && impAF.loading ? "disabled" : ""}>
+        ${impAF && impAF.loading ? "Recherche sur API-Football…" : "Importer les prochains matchs (API-Football)"}
+      </button>
+      ${impAF && !impAF.loading && impAF.error === "not_found" ? `<div class="form-error">Aucune équipe trouvée pour « ${escapeHtml(p.club)} » sur API-Football.</div>` : ""}
+      ${impAF && !impAF.loading && impAF.error === "no_events" ? `<div style="font-size:12px;color:var(--muted);margin-top:6px">Équipe trouvée (${escapeHtml(impAF.teamName)}), mais aucun match à venir renseigné.</div>` : ""}
+      ${impAF && !impAF.loading && impAF.error === "network" ? `<div class="form-error">Relais API-Football indisponible${impAF.detail ? " : " + escapeHtml(impAF.detail) : ""}.</div>` : ""}
+      ${impAF && !impAF.loading && impAF.success !== undefined ? `<div style="font-size:12px;color:var(--green);margin-top:6px">${impAF.success} match(s) importé(s) pour ${escapeHtml(impAF.teamName)}.</div>` : ""}
+    </div>
+
+    <div style="margin:6px 0 6px">
+      <button class="btn btn-outline" id="import-sm-btn" style="width:100%;color:var(--green)" ${impSM && impSM.loading ? "disabled" : ""}>
+        ${impSM && impSM.loading ? "Recherche sur Sportmonks…" : "Importer les prochains matchs (Sportmonks)"}
+      </button>
+      ${impSM && !impSM.loading && impSM.error === "not_found" ? `<div class="form-error">Aucune équipe trouvée pour « ${escapeHtml(p.club)} » sur Sportmonks.</div>` : ""}
+      ${impSM && !impSM.loading && impSM.error === "no_events" ? `<div style="font-size:12px;color:var(--muted);margin-top:6px">Équipe trouvée (${escapeHtml(impSM.teamName)}), mais aucun match à venir renseigné.</div>` : ""}
+      ${impSM && !impSM.loading && impSM.error === "network" ? `<div class="form-error">Relais Sportmonks indisponible${impSM.detail ? " : " + escapeHtml(impSM.detail) : ""}.</div>` : ""}
+      ${impSM && !impSM.loading && impSM.success !== undefined ? `<div style="font-size:12px;color:var(--green);margin-top:6px">${impSM.success} match(s) importé(s) pour ${escapeHtml(impSM.teamName)}.</div>` : ""}
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" id="add-match-btn">+ Ajouter un match</button>
+      <button class="btn btn-outline" id="edit-player-btn">Modifier</button>
+    </div>
+    <button class="btn btn-outline-danger" id="deactivate-btn" style="width:100%;margin-top:8px">Désactiver ce joueur</button>
+  `);
+
+  document.getElementById("import-api-btn").addEventListener("click", () => importMatchesForPlayer(p.id));
+  document.getElementById("import-af-btn").addEventListener("click", () => importMatchesForPlayerViaApiFootball(p.id));
+  document.getElementById("import-sm-btn").addEventListener("click", () => importMatchesForPlayerViaSportmonks(p.id));
+  document.getElementById("add-match-btn").addEventListener("click", () => openAddMatch(p.id));
+  document.getElementById("edit-player-btn").addEventListener("click", () => openEditPlayer(p.id));
+  document.getElementById("deactivate-btn").addEventListener("click", () => {
+    p.actif = false; saveData(); closePanel(); render();
+  });
+}
+
+function renderEditPanel(playerId) {
+  const existing = playerId ? playerById(playerId) : null;
+  const form = existing ? { ...existing } : {
+    nom:"", prenom:"", naissance:"", nationalite:"Mali", poste:"", pied:"Droit",
+    club:"", paysClub:"", categories:[], priorite:"P3", statutMali:"À surveiller"
+  };
+
+  function draw(errorMsg) {
+    openOverlayPanel(`
+      <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:16px">${existing ? "Modifier le joueur" : "Ajouter un joueur"}</div>
+      <div class="field-row">
+        <div class="field"><label>Prénom</label><input id="f-prenom" value="${escapeHtml(form.prenom)}" /></div>
+        <div class="field"><label>Nom</label><input id="f-nom" value="${escapeHtml(form.nom)}" /></div>
+      </div>
+      <div class="field"><label>Date de naissance</label><input type="date" id="f-naissance" value="${escapeHtml(form.naissance)}" /></div>
+      <div class="field-row">
+        <div class="field"><label>Poste</label><input id="f-poste" value="${escapeHtml(form.poste)}" /></div>
+        <div class="field"><label>Pied fort</label>
+          <select id="f-pied">
+            ${["Droit","Gauche","Ambidextre"].map(o=>`<option ${form.pied===o?"selected":""}>${o}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Club</label><input id="f-club" value="${escapeHtml(form.club)}" /></div>
+        <div class="field"><label>Pays du club</label><input id="f-pays" value="${escapeHtml(form.paysClub)}" /></div>
+      </div>
+      <div class="field"><label>Statut Mali</label>
+        <select id="f-statut">
+          ${["International","Éligible","À surveiller"].map(o=>`<option ${form.statutMali===o?"selected":""}>${o}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Catégories MFC</label>
+        <div id="f-categories">
+          ${Object.keys(CATEGORY_STYLE).map(c => `<button type="button" class="cat-toggle ${form.categories.includes(c)?'active':''}" data-cat="${c}">${c}</button>`).join("")}
+        </div>
+      </div>
+      <div class="field"><label>Priorité</label>
+        <select id="f-priorite">
+          <option value="P1" ${form.priorite==="P1"?"selected":""}>P1 — priorité maximale</option>
+          <option value="P2" ${form.priorite==="P2"?"selected":""}>P2 — priorité</option>
+          <option value="P3" ${form.priorite==="P3"?"selected":""}>P3 — surveillance</option>
+        </select>
+      </div>
+      ${errorMsg ? `<div class="form-error">${errorMsg}</div>` : ""}
+      <div class="form-actions">
+        <button class="btn btn-primary" id="save-player-btn">Enregistrer</button>
+        <button class="btn btn-outline" id="cancel-player-btn">Annuler</button>
+      </div>
+    `);
+
+    document.querySelectorAll("[data-cat]").forEach(el => el.addEventListener("click", () => {
+      const c = el.dataset.cat;
+      form.categories = form.categories.includes(c) ? form.categories.filter(x=>x!==c) : [...form.categories, c];
+      draw();
+    }));
+    document.getElementById("cancel-player-btn").addEventListener("click", closePanel);
+    document.getElementById("save-player-btn").addEventListener("click", () => {
+      form.prenom = document.getElementById("f-prenom").value;
+      form.nom = document.getElementById("f-nom").value;
+      form.naissance = document.getElementById("f-naissance").value;
+      form.poste = document.getElementById("f-poste").value;
+      form.pied = document.getElementById("f-pied").value;
+      form.club = document.getElementById("f-club").value;
+      form.paysClub = document.getElementById("f-pays").value;
+      form.statutMali = document.getElementById("f-statut").value;
+      form.priorite = document.getElementById("f-priorite").value;
+
+      if (!form.nom.trim() || !form.prenom.trim() || !form.club.trim()) {
+        draw("Nom, prénom et club sont obligatoires."); return;
+      }
+      if (form.categories.length === 0) {
+        draw("Sélectionne au moins une catégorie MFC."); return;
+      }
+      if (existing) {
+        Object.assign(existing, form);
+      } else {
+        const id = "MFC-" + String(1000 + state.players.length + 1).slice(1);
+        state.players.push({ ...form, id, actif: true });
+      }
+      saveData();
+      closePanel();
+      render();
+    });
+  }
+  draw();
+}
+
+function renderAddMatchPanel(playerId) {
+  const form = { competition:"", adversaire:"", domicile:true, date: todayISO(), heure:"18:00", statut:"Programmé" };
+
+  function draw(errorMsg) {
+    openOverlayPanel(`
+      <div style="font-size:16px;font-weight:700;font-family:'Space Grotesk',sans-serif;margin-bottom:16px">Ajouter un match</div>
+      <div class="field"><label>Compétition</label><input id="m-competition" value="${escapeHtml(form.competition)}" /></div>
+      <div class="field"><label>Adversaire</label><input id="m-adversaire" value="${escapeHtml(form.adversaire)}" /></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="m-date" value="${form.date}" /></div>
+        <div class="field"><label>Heure</label><input type="time" id="m-heure" value="${form.heure}" /></div>
+      </div>
+      <div class="field"><label>Domicile / extérieur</label>
+        <select id="m-domicile">
+          <option value="dom" ${form.domicile?"selected":""}>Domicile</option>
+          <option value="ext" ${!form.domicile?"selected":""}>Extérieur</option>
+        </select>
+      </div>
+      <div class="field"><label>Statut</label>
+        <select id="m-statut">
+          ${["Programmé","En cours","Terminé","Reporté","Annulé"].map(o=>`<option ${form.statut===o?"selected":""}>${o}</option>`).join("")}
+        </select>
+      </div>
+      ${errorMsg ? `<div class="form-error">${errorMsg}</div>` : ""}
+      <div class="form-actions">
+        <button class="btn btn-primary" id="save-match-btn">Enregistrer</button>
+        <button class="btn btn-outline" id="cancel-match-btn">Annuler</button>
+      </div>
+    `);
+    document.getElementById("cancel-match-btn").addEventListener("click", closePanel);
+    document.getElementById("save-match-btn").addEventListener("click", () => {
+      form.competition = document.getElementById("m-competition").value;
+      form.adversaire = document.getElementById("m-adversaire").value;
+      form.date = document.getElementById("m-date").value;
+      form.heure = document.getElementById("m-heure").value;
+      form.domicile = document.getElementById("m-domicile").value === "dom";
+      form.statut = document.getElementById("m-statut").value;
+      if (!form.competition.trim() || !form.adversaire.trim()) {
+        draw("Adversaire et compétition sont obligatoires."); return;
+      }
+      state.matches.push({ ...form, id: "M-" + Date.now(), playerId, source: "Manuel" });
+      saveData();
+      closePanel();
+      render();
+    });
+  }
+  draw();
+}
+
+loadData();
+render();
+checkNewsOnLoad();
+</script>
+</body>
+</html>
