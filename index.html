@@ -196,6 +196,7 @@ let state = {
   importStatus: {},
   importStatusAF: {},
   importStatusSM: {},
+  playerStats: {},
   apiKey: "",
   postsGen: null, // {loading, text, error}
   newsState: null // {loading, text, error, fetchedAt, needsKey}
@@ -555,6 +556,28 @@ async function highlightlyPing() {
   return data;
 }
 
+async function highlightlyCall(path, params) {
+  const qs = new URLSearchParams({ path, ...(params || {}) }).toString();
+  const res = await fetch(`/.netlify/functions/highlightly?${qs}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Erreur du relais Highlightly (statut ${res.status}).`);
+  }
+  return data;
+}
+
+async function highlightlySearchPlayer(name) {
+  const data = await highlightlyCall("players", { name });
+  const list = data.data || data || [];
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return list[0];
+}
+
+async function highlightlyPlayerStatistics(playerId) {
+  const data = await highlightlyCall(`players/${playerId}/statistics`);
+  return data.data || data;
+}
+
 async function testApiConnection() {
   state.apiTest = { loading: true };
   render();
@@ -699,6 +722,27 @@ async function importMatchesForPlayerViaSportmonks(playerId) {
     state.importStatusSM[playerId] = { loading: false, success: newMatches.length, teamName: team.name };
   } catch (e) {
     state.importStatusSM[playerId] = { loading: false, error: "network", detail: e.message };
+  }
+  render();
+}
+
+async function fetchPlayerStatsFromHighlightly(playerId) {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return;
+  state.playerStats[playerId] = { loading: true };
+  render();
+  try {
+    const searchName = `${player.prenom} ${player.nom}`;
+    const found = await highlightlySearchPlayer(searchName);
+    if (!found) {
+      state.playerStats[playerId] = { loading: false, error: "not_found" };
+      render(); return;
+    }
+    const foundId = found.id || found.playerId;
+    const stats = await highlightlyPlayerStatistics(foundId);
+    state.playerStats[playerId] = { loading: false, playerName: found.name || searchName, raw: stats };
+  } catch (e) {
+    state.playerStats[playerId] = { loading: false, error: "network", detail: e.message };
   }
   render();
 }
@@ -1085,6 +1129,7 @@ function renderDetailPanel(playerId) {
   const imp = state.importStatus[p.id];
   const impAF = state.importStatusAF[p.id];
   const impSM = state.importStatusSM[p.id];
+  const stats = state.playerStats[p.id];
 
   openOverlayPanel(`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
@@ -1138,6 +1183,19 @@ function renderDetailPanel(playerId) {
       ${impSM && !impSM.loading && impSM.success !== undefined ? `<div style="font-size:12px;color:var(--green);margin-top:6px">${impSM.success} match(s) importé(s) pour ${escapeHtml(impSM.teamName)}.</div>` : ""}
     </div>
 
+    <div style="margin:14px 0 6px;font-size:13px;font-weight:600">Statistiques (Highlightly)</div>
+    <div style="margin:0 0 6px">
+      <button class="btn btn-outline" id="stats-btn" style="width:100%;color:var(--indigo)" ${stats && stats.loading ? "disabled" : ""}>
+        ${stats && stats.loading ? "Recherche des statistiques…" : "Voir les statistiques"}
+      </button>
+      ${stats && !stats.loading && stats.error === "not_found" ? `<div class="form-error">Joueur non trouvé sur Highlightly pour « ${escapeHtml(p.prenom)} ${escapeHtml(p.nom)} ».</div>` : ""}
+      ${stats && !stats.loading && stats.error === "network" ? `<div class="form-error">Relais Highlightly indisponible${stats.detail ? " : " + escapeHtml(stats.detail) : ""}.</div>` : ""}
+      ${stats && !stats.loading && stats.raw ? `
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:180px;overflow:auto;font-family:monospace;white-space:pre-wrap">${escapeHtml(JSON.stringify(stats.raw, null, 2)).slice(0, 1500)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Trouvé sous le nom : ${escapeHtml(stats.playerName)} — format brut affiché en attendant d'affiner la présentation.</div>
+      ` : ""}
+    </div>
+
     <div class="form-actions">
       <button class="btn btn-primary" id="add-match-btn">+ Ajouter un match</button>
       <button class="btn btn-outline" id="edit-player-btn">Modifier</button>
@@ -1148,6 +1206,7 @@ function renderDetailPanel(playerId) {
   document.getElementById("import-api-btn").addEventListener("click", () => importMatchesForPlayer(p.id));
   document.getElementById("import-af-btn").addEventListener("click", () => importMatchesForPlayerViaApiFootball(p.id));
   document.getElementById("import-sm-btn").addEventListener("click", () => importMatchesForPlayerViaSportmonks(p.id));
+  document.getElementById("stats-btn").addEventListener("click", () => fetchPlayerStatsFromHighlightly(p.id));
   document.getElementById("add-match-btn").addEventListener("click", () => openAddMatch(p.id));
   document.getElementById("edit-player-btn").addEventListener("click", () => openEditPlayer(p.id));
   document.getElementById("deactivate-btn").addEventListener("click", () => {
