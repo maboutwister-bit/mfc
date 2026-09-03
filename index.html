@@ -152,6 +152,8 @@ const NEWS_CACHE_KEY = "mfc-radar-news-cache";
 const NEWS_MAX_AGE_MS = 6 * 3600 * 1000;
 const COMPETITOR_CACHE_KEY = "mfc-radar-competitor-cache";
 const COMPETITOR_MAX_AGE_MS = 12 * 3600 * 1000;
+const MERCATO_CACHE_KEY = "mfc-radar-mercato-cache";
+const MERCATO_MAX_AGE_MS = 24 * 3600 * 1000;
 const STATS_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const TELEGRAM_TOKEN_STORAGE = "mfc-radar-telegram-token";
 const TELEGRAM_CHATID_STORAGE = "mfc-radar-telegram-chatid";
@@ -221,7 +223,8 @@ let state = {
   postsGen: null, // {loading, text, error}
   weekPosts: null, // {loading, text, error}
   newsState: null, // {loading, text, error, fetchedAt, needsKey}
-  competitorState: null // {loading, text, error, fetchedAt, needsKey}
+  competitorState: null, // {loading, text, error, fetchedAt, needsKey}
+  mercatoState: null // {loading, text, error, fetchedAt, needsKey}
 };
 
 function loadData() {
@@ -396,6 +399,12 @@ const PORTRAIT_SCHEDULE = [
   { player: "Mamadou Sangaré", angle: "Le milieu qui monte en puissance" }
 ];
 
+const PERFORMANCE_GUIDANCE = `Enseignements de performance à respecter pour tous les posts (basés sur l'analyse des statistiques réelles du compte) :
+- Les formats "carte de données visuelle" (chiffre clé mis en avant, fond travaillé, mini-cases de stats) performent nettement mieux que le texte brut sans visuel — privilégie toujours une accroche qui peut se traduire en carte visuelle avec un chiffre ou une statistique au centre.
+- Le format texte simple sans mise en forme visuelle (ex. liste de noms en légende, sans carte) a très mal performé — évite ce format ou reformule-le comme une carte de données.
+- Les portraits de joueurs et les récapitulatifs d'équipe (type XI de la semaine) fonctionnent bien et doivent rester construits comme des visuels structurés, pas du texte pur.
+- Quand c'est pertinent pour le format du jour, structure explicitement le post autour d'un chiffre fort (stat, montant, classement) plutôt qu'une simple annonce textuelle.`;
+
 const EDITORIAL_FORMATS = {
   0: { name: "XI MFC de la semaine", time: "20h30", objective: "Meilleur XI de la semaine : dernière sélection des Aigles + forme du week-end + U23/NEXT + équilibre tactique." },
   1: { name: "Les Maliens du week-end", time: "08h00", objective: "Performances marquantes du vendredi au dimanche." },
@@ -566,6 +575,8 @@ Règles éditoriales strictes :
 - Données vérifiées : si une information manque pour un format donné, indique-le clairement au lieu de l'inventer
 - Un post par format, dans l'ordre du calendrier ci-dessus
 
+${PERFORMANCE_GUIDANCE}
+
 Voici l'état actuel du tableau de bord :
 
 ${summary}
@@ -653,6 +664,8 @@ Règles éditoriales MFC à respecter strictement :
 - Données vérifiées : si une information manque, indique-le clairement au lieu de la deviner ou de l'inventer
 - Si les actualités fédération ci-dessous contiennent une info plus pertinente pour le format du jour que les données joueurs/matchs, tu peux t'appuyer dessus (ex. nomination d'un sélectionneur, communiqué officiel)
 - Un seul post pour le format du jour
+
+${PERFORMANCE_GUIDANCE}
 
 Voici l'état actuel du tableau de bord :
 
@@ -762,6 +775,87 @@ function checkCompetitorOnLoad() {
   if (!cached || Date.now() - cached.fetchedAt >= COMPETITOR_MAX_AGE_MS) {
     if (state.apiKey) fetchCompetitorWatch(false);
     else if (!cached) state.competitorState = { needsKey: true };
+  }
+}
+
+function loadMercatoCache() {
+  try {
+    const raw = localStorage.getItem(MERCATO_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchMercatoWatch(force) {
+  if (state.mercatoState && state.mercatoState.loading) return;
+  if (!force) {
+    const cached = loadMercatoCache();
+    if (cached && Date.now() - cached.fetchedAt < MERCATO_MAX_AGE_MS) {
+      state.mercatoState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+      render();
+      return;
+    }
+  }
+  if (!state.apiKey) {
+    state.mercatoState = { needsKey: true };
+    render();
+    return;
+  }
+  state.mercatoState = { loading: true };
+  render();
+
+  const activeNames = state.players.filter(p => p.actif).map(p => `${p.prenom} ${p.nom}`).join(", ");
+
+  const prompt = `Tu es le rédacteur de veille du compte "Mali Football Connect" (MFC).
+
+Cherche les actualités les plus récentes (dernières 48h si possible) concernant les joueurs maliens et binationaux suivants, ou plus largement l'actualité mercato/performances des joueurs maliens à l'étranger :
+
+${activeNames}
+
+Cherche en particulier :
+- Transferts officiels ou rumeurs de transfert récentes
+- Buts, passes décisives ou performances marquantes dans les derniers matchs
+- Prêts, retours de blessure, ou changements de situation notables
+
+Réponds avec une liste à puces courte (6 éléments maximum), en précisant à chaque fois si l'information est officielle ou une rumeur/information non confirmée. Si tu ne trouves rien de récent, dis-le clairement au lieu d'inventer. Réponds en français, sans préambule ni conclusion.`;
+
+  try {
+    const text = await callClaude(prompt, [{ type: "web_search_20250305", name: "web_search" }], 60000);
+    const fetchedAt = Date.now();
+    state.mercatoState = { loading: false, text, fetchedAt };
+    try {
+      localStorage.setItem(MERCATO_CACHE_KEY, JSON.stringify({ text, fetchedAt }));
+    } catch (e) { /* stockage plein ou indisponible, on continue sans cache */ }
+  } catch (e) {
+    state.mercatoState = { loading: false, error: e.message || "Erreur inconnue" };
+  }
+  render();
+}
+
+function renderMercatoBody() {
+  const m = state.mercatoState;
+  if (!m) return `<div class="empty-row">Chargement…</div>`;
+  if (m.needsKey) return `<div style="font-size:12.5px;color:var(--muted)">Configure ta clé API (⚙) pour activer la veille mercato/joueurs.</div>`;
+  if (m.loading) return `<div class="empty-row">Recherche des actualités joueurs en cours… (jusqu'à 60 secondes)</div>`;
+  if (m.error) return `<div class="form-error">${escapeHtml(m.error)}</div>`;
+  if (m.text) {
+    const ts = m.fetchedAt ? new Date(m.fetchedAt).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "";
+    return `<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escapeHtml(m.text)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Dernière vérification : ${ts}</div>`;
+  }
+  return `<div class="empty-row">Aucune donnée pour le moment.</div>`;
+}
+
+function checkMercatoOnLoad() {
+  const cached = loadMercatoCache();
+  if (cached) {
+    state.mercatoState = { loading: false, text: cached.text, fetchedAt: cached.fetchedAt };
+  }
+  if (!cached || Date.now() - cached.fetchedAt >= MERCATO_MAX_AGE_MS) {
+    if (state.apiKey) fetchMercatoWatch(false);
+    else if (!cached) state.mercatoState = { needsKey: true };
   }
 }
 
@@ -1116,7 +1210,9 @@ Rédige 5 posts distincts, un par joueur, dans l'ordre du classement (1 = meille
 Règles strictes :
 - N'utilise que les statistiques fournies, n'invente aucun chiffre
 - Sépare bien chaque post par "---"
-- Réponds directement avec le texte des 5 posts, sans préambule ni conclusion`;
+- Réponds directement avec le texte des 5 posts, sans préambule ni conclusion
+
+${PERFORMANCE_GUIDANCE}`;
 
   try {
     const text = await callClaude(prompt, null, 45000);
@@ -1266,6 +1362,14 @@ function render() {
       ${renderCompetitorBody()}
     </div>
 
+    <div id="mercato-block" style="background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;font-family:'Space Grotesk',sans-serif">Veille joueurs &amp; mercato</div>
+        <button class="btn btn-outline" id="refresh-mercato-btn" style="padding:4px 10px;font-size:11.5px">Actualiser</button>
+      </div>
+      ${renderMercatoBody()}
+    </div>
+
     <div class="summary-bar">
       <div style="display:flex;gap:24px">
         <div><div class="stat-value">${tm.length}</div><div class="stat-label">Aujourd'hui</div></div>
@@ -1308,6 +1412,7 @@ function render() {
   document.getElementById("settings-btn").addEventListener("click", () => { state.panel = { type: "settings" }; renderPanel(); });
   document.getElementById("refresh-news-btn").addEventListener("click", () => fetchFederationNews(true));
   document.getElementById("refresh-competitor-btn").addEventListener("click", () => fetchCompetitorWatch(true));
+  document.getElementById("refresh-mercato-btn").addEventListener("click", () => fetchMercatoWatch(true));
   document.getElementById("bulk-import-btn").addEventListener("click", () => { state.panel = { type: "bulkImport" }; renderPanel(); });
   document.getElementById("add-player-btn").addEventListener("click", () => openEditPlayer(null));
   app.querySelectorAll("[data-filter]").forEach(el => el.addEventListener("click", () => { state.filter = el.dataset.filter; render(); }));
@@ -1990,6 +2095,7 @@ loadData();
 render();
 checkNewsOnLoad();
 checkCompetitorOnLoad();
+checkMercatoOnLoad();
 </script>
 </body>
 </html>
